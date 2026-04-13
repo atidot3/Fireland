@@ -1,17 +1,24 @@
 // ============================================================================
 // Log — Configurable, coloured logging implementation
+//
+// Thread-safety model:
+//   - Init() is called once from main() before any worker threads start.
+//   - After Init(), the maps (s_appenders, s_loggers) are structurally frozen.
+//   - ShouldLog() / Write() are lock-free on the hot path.
+//   - SetLevel() / SetConsoleEnabled() use atomic stores (safe from any thread).
 // ============================================================================
 
 #include "Log.h"
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <memory>
-#include <shared_mutex>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -30,7 +37,6 @@ namespace Fireland::Utils::Log {
 // Constants
 // ============================================================================
 
-/// Width of the widest label ("WARNING" = 7 chars), used with std::setw.
 static constexpr int LABEL_WIDTH = 7;
 
 static const char* LabelForLevel(Level lvl)
@@ -78,7 +84,6 @@ static const char* AnsiColor(uint8_t index)
     return (index < COLOR_COUNT) ? ColorTable[index] : ANSI_RESET;
 }
 
-/// Default colours: fatal=RED(1) error=LRED(9) warning=MAGENTA(5) info=GREEN(2) debug=YELLOW(8) trace=GREY(7)
 static constexpr std::array<uint8_t, 6> DEFAULT_COLORS = { 1, 9, 5, 2, 8, 7 };
 
 // ============================================================================
@@ -99,18 +104,20 @@ enum AppenderFlags : uint8_t
 class Appender
 {
 public:
-    Appender(Level maxLevel, uint8_t flags) : _maxLevel(maxLevel), _flags(flags) {}
+    Appender(Level maxLevel, uint8_t flags)
+        : _maxLevel(maxLevel), _flags(flags) {}
     virtual ~Appender() = default;
 
     bool Accepts(Level msgLevel) const
     {
+        auto max = _maxLevel.load(std::memory_order_relaxed);
         return msgLevel != Level::Disabled &&
-               static_cast<uint8_t>(msgLevel) <= static_cast<uint8_t>(_maxLevel);
+               static_cast<uint8_t>(msgLevel) <= static_cast<uint8_t>(max);
     }
 
     virtual void Write(Level level, std::string_view logger, std::string_view message) = 0;
 
-    void SetMaxLevel(Level level) { _maxLevel = level; }
+    void SetMaxLevel(Level level) { _maxLevel.store(level, std::memory_order_relaxed); }
 
 protected:
     static std::string Timestamp()
@@ -131,8 +138,8 @@ protected:
         return oss.str();
     }
 
-    Level   _maxLevel;
-    uint8_t _flags;
+    std::atomic<Level> _maxLevel;
+    uint8_t            _flags;
 };
 
 // ============================================================================
@@ -152,7 +159,6 @@ public:
         if (!Accepts(level))
             return;
 
-        // Color for this level (index: Fatal=0 .. Trace=5)
         const char* color = AnsiColor(_colors[static_cast<uint8_t>(level) - 1]);
 
         std::ostringstream oss;
@@ -169,7 +175,6 @@ public:
 
         oss << message;
 
-        // Single write for thread safety
         std::cout << oss.str() << std::endl;
     }
 
@@ -199,17 +204,22 @@ public:
         if (!Accepts(level) || !_file.is_open())
             return;
 
+        std::ostringstream oss;
+
         if (_flags & FLAG_TIMESTAMP)
-            _file << "[" << Timestamp() << "] ";
+            oss << "[" << Timestamp() << "] ";
 
         if (_flags & FLAG_LOGLEVEL)
-            _file << "[" << std::left << std::setw(LABEL_WIDTH)
+            oss << "[" << std::left << std::setw(LABEL_WIDTH)
                   << LabelForLevel(level) << "] ";
 
         if (_flags & FLAG_LOGGERNAME)
-            _file << "[" << logger << "] ";
+            oss << "[" << logger << "] ";
 
-        _file << message << '\n';
+        oss << message << '\n';
+
+        // Single write + flush
+        _file << oss.str();
         _file.flush();
     }
 
@@ -223,18 +233,33 @@ private:
 
 struct LoggerConfig
 {
-    Level maxLevel = Level::Disabled;
+    std::atomic<Level>       maxLevel{ Level::Disabled };
     std::vector<std::string> appenderNames;
+
+    LoggerConfig() = default;
+    LoggerConfig(LoggerConfig&& o) noexcept
+        : maxLevel(o.maxLevel.load(std::memory_order_relaxed))
+        , appenderNames(std::move(o.appenderNames))
+    {}
+    LoggerConfig& operator=(LoggerConfig&& o) noexcept
+    {
+        maxLevel.store(o.maxLevel.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        appenderNames = std::move(o.appenderNames);
+        return *this;
+    }
 };
 
 // ============================================================================
 // Global state
+//
+// s_appenders / s_loggers are populated during Init() (single-threaded)
+// and structurally immutable afterwards.  Only atomic levels change at runtime.
 // ============================================================================
 
-static std::shared_mutex                                          s_mutex;
+static std::once_flag                                             s_initFlag;
+static std::atomic<bool>                                          s_initialized{ false };
 static std::unordered_map<std::string, std::unique_ptr<Appender>> s_appenders;
 static std::unordered_map<std::string, LoggerConfig>              s_loggers;
-static bool                                                       s_initialized = false;
 
 // ============================================================================
 // Enable VT-100 escape sequences on Windows
@@ -263,7 +288,6 @@ static std::string Trim(std::string_view sv)
     return std::string(sv.substr(start, end - start + 1));
 }
 
-/// Split a comma-separated value string, respecting double-quoted fields.
 static std::vector<std::string> SplitConfigValue(std::string_view value)
 {
     std::vector<std::string> tokens;
@@ -312,12 +336,12 @@ static void ParseAppender(const std::string& name, const std::string& value)
     auto maxLvl = static_cast<Level>(level);
     auto fl     = static_cast<uint8_t>(flags);
 
-    if (type == 1) // Console
+    if (type == 1)
     {
         auto colors = (parts.size() >= 4) ? ParseColors(parts[3]) : DEFAULT_COLORS;
         s_appenders[name] = std::make_unique<ConsoleAppender>(maxLvl, fl, colors);
     }
-    else if (type == 2) // File
+    else if (type == 2)
     {
         if (parts.size() < 4) return;
         char mode = (parts.size() >= 5 && !parts[4].empty()) ? parts[4][0] : 'a';
@@ -334,7 +358,7 @@ static void ParseLogger(const std::string& name, const std::string& value)
     std::string appendersPart = Trim(value.substr(commaPos + 1));
 
     LoggerConfig cfg;
-    cfg.maxLevel = static_cast<Level>(level);
+    cfg.maxLevel.store(static_cast<Level>(level), std::memory_order_relaxed);
 
     std::istringstream iss(appendersPart);
     std::string appName;
@@ -375,26 +399,24 @@ static void LoadConfigFile(const std::string& filename)
 }
 
 // ============================================================================
-// Defaults (used when no config file is loaded)
+// Defaults
 // ============================================================================
 
 static void CreateDefaults(Level defaultLevel)
 {
-    // Default console appender: all levels, show [LEVEL] and [LoggerName]
     s_appenders["Console"] = std::make_unique<ConsoleAppender>(
         Level::Trace,
         static_cast<uint8_t>(FLAG_LOGLEVEL | FLAG_LOGGERNAME),
         DEFAULT_COLORS);
 
-    // Default root logger
     LoggerConfig root;
-    root.maxLevel = defaultLevel;
+    root.maxLevel.store(defaultLevel, std::memory_order_relaxed);
     root.appenderNames = { "Console" };
     s_loggers["root"] = std::move(root);
 }
 
 // ============================================================================
-// Logger lookup (fallback to "root")
+// Logger lookup (lock-free — maps are frozen after Init)
 // ============================================================================
 
 static const LoggerConfig* FindLogger(std::string_view name)
@@ -411,55 +433,51 @@ static const LoggerConfig* FindLogger(std::string_view name)
 }
 
 // ============================================================================
-// Public API
+// Public API — all lock-free after Init()
 // ============================================================================
 
 void Init(const std::string& configFile)
 {
-    std::unique_lock lock(s_mutex);
-    if (s_initialized) return;
+    std::call_once(s_initFlag, [&configFile]
+    {
+        EnableAnsiOnWindows();
+        CreateDefaults(Level::Info);
 
-    EnableAnsiOnWindows();
-    CreateDefaults(Level::Info);
+        if (!configFile.empty())
+            LoadConfigFile(configFile);
 
-    if (!configFile.empty())
-        LoadConfigFile(configFile);
-
-    s_initialized = true;
+        s_initialized.store(true, std::memory_order_release);
+    });
 }
 
 void Init(Level defaultLevel)
 {
-    std::unique_lock lock(s_mutex);
-    if (s_initialized) return;
-
-    EnableAnsiOnWindows();
-    CreateDefaults(defaultLevel);
-    s_initialized = true;
+    std::call_once(s_initFlag, [defaultLevel]
+    {
+        EnableAnsiOnWindows();
+        CreateDefaults(defaultLevel);
+        s_initialized.store(true, std::memory_order_release);
+    });
 }
 
 bool ShouldLog(std::string_view logger, Level level)
 {
-    std::shared_lock lock(s_mutex);
-
-    if (!s_initialized)
+    if (!s_initialized.load(std::memory_order_acquire))
         return static_cast<uint8_t>(level) <= static_cast<uint8_t>(Level::Info);
 
     const auto* cfg = FindLogger(logger);
     if (!cfg)
         return false;
 
+    auto max = cfg->maxLevel.load(std::memory_order_relaxed);
     return level != Level::Disabled &&
-           static_cast<uint8_t>(level) <= static_cast<uint8_t>(cfg->maxLevel);
+           static_cast<uint8_t>(level) <= static_cast<uint8_t>(max);
 }
 
 void Write(std::string_view logger, Level level, std::string_view message)
 {
-    std::shared_lock lock(s_mutex);
-
-    if (!s_initialized)
+    if (!s_initialized.load(std::memory_order_acquire))
     {
-        // Fallback: plain console output
         std::cout << "[" << std::left << std::setw(LABEL_WIDTH)
                   << LabelForLevel(level) << "] "
                   << "[" << logger << "] " << message << std::endl;
@@ -479,17 +497,13 @@ void Write(std::string_view logger, Level level, std::string_view message)
 
 void SetLevel(std::string_view logger, Level level)
 {
-    std::unique_lock lock(s_mutex);
     auto it = s_loggers.find(std::string(logger));
     if (it != s_loggers.end())
-        it->second.maxLevel = level;
+        it->second.maxLevel.store(level, std::memory_order_relaxed);
 }
 
 void SetConsoleEnabled(bool enabled)
 {
-    std::unique_lock lock(s_mutex);
-
-    // Set all ConsoleAppender instances to Disabled or restore to Trace
     for (auto& [name, appender] : s_appenders)
     {
         if (dynamic_cast<ConsoleAppender*>(appender.get()))
