@@ -1,30 +1,50 @@
 // ============================================================================
 // Fireland Auth Server — Entry point
 //
-// Minimal TCP server using Boost.Asio C++20 coroutines.
-// Listens on 0.0.0.0:3724 (default WoW auth port).
+// SRP6-based authentication server for WoW Cataclysm (4.3.4).
+// Listens on 0.0.0.0:3724, handles LOGON_CHALLENGE, LOGON_PROOF, REALM_LIST.
+//
+// Hardcoded test account: TEST / TEST
 // ============================================================================
 
 #include <cstdlib>
 #include <iostream>
 
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/detached.hpp>
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/use_awaitable.hpp>
+
 #include <Utils/Log.h>
 #include <Utils/ProgramOptions.h>
+#include <Utils/IoContext.h>
 
-#include <Network/IoContext.h>
-#include <Network/TcpListener.h>
-#include <Network/SessionManager.h>
-#include <Network/PacketBuffer.h>
+#include "AuthSession.h"
 
-using namespace Fireland::Network;
+using namespace boost::asio;
 
-static void OnPacketReceived(TcpSession::Ptr session, PacketBuffer packet)
+static awaitable<void> AcceptLoop(ip::tcp::acceptor& acceptor)
 {
-    FL_LOG_INFO("AuthServer", "Session #{} received opcode 0x{:x} ({} bytes payload)",
-        session->GetId(), packet.GetOpcode(), packet.GetPayloadSize());
+    while (acceptor.is_open())
+    {
+        try
+        {
+            auto socket = co_await acceptor.async_accept(use_awaitable);
+            socket.set_option(ip::tcp::no_delay(true));
 
-    // Echo the packet back for now (placeholder for auth logic)
-    session->Send(std::move(packet));
+            auto session = std::make_shared<Fireland::Auth::AuthSession>(std::move(socket));
+            co_spawn(
+                acceptor.get_executor(),
+                [session]() -> awaitable<void> { co_await session->Run(); },
+                detached);
+        }
+        catch (const boost::system::system_error& e)
+        {
+            if (e.code() == error::operation_aborted)
+                break;
+            FL_LOG_ERROR("AuthServer", "Accept error: {}", e.what());
+        }
+    }
 }
 
 int main(int argc, char* argv[])
@@ -39,6 +59,7 @@ int main(int argc, char* argv[])
 
     std::cout << "========================================\n"
               << "  Fireland Auth Server\n"
+              << "  Account: TEST / TEST\n"
               << "========================================\n";
 
     constexpr const char* BIND_ADDRESS = "0.0.0.0";
@@ -47,15 +68,21 @@ int main(int argc, char* argv[])
 
     try
     {
-        IoContext       ioContext(THREAD_COUNT);
-        SessionManager  sessionManager(ioContext.Get());
-        TcpListener     listener(ioContext, sessionManager);
+        Fireland::Utils::IoContext ioContext(THREAD_COUNT);
+
+        ip::tcp::acceptor acceptor(ioContext.Get());
+        ip::tcp::endpoint endpoint(ip::make_address(BIND_ADDRESS), BIND_PORT);
+
+        acceptor.open(endpoint.protocol());
+        acceptor.set_option(ip::tcp::acceptor::reuse_address(true));
+        acceptor.bind(endpoint);
+        acceptor.listen(socket_base::max_listen_connections);
+
+        FL_LOG_INFO("AuthServer", "Listening on {}:{}", BIND_ADDRESS, BIND_PORT);
+
+        co_spawn(ioContext.Get(), AcceptLoop(acceptor), detached);
 
         ioContext.InstallSignalHandlers();
-        listener.Listen(BIND_ADDRESS, BIND_PORT, OnPacketReceived);
-
-        FL_LOG_INFO("AuthServer", "Running. Press Ctrl+C to stop.");
-
         ioContext.Join();
 
         FL_LOG_INFO("AuthServer", "Shutdown complete.");

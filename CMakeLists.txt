@@ -35,6 +35,8 @@ set(FIRELAND_BOOST_COMPONENTS
   program_options
   url
   charconv
+  multiprecision
+  uuid
 )
 
 # ----------------------------------------------------------------------------

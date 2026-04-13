@@ -31,8 +31,9 @@
 #   include <Windows.h>
 #endif
 
-using namespace Fireland::Utils::Log;
-using namespace Fireland::Utils::Describe;
+using Fireland::Utils::Describe::to_string;
+
+namespace Fireland::Utils::Log {
 
 // ============================================================================
 // Constants
@@ -423,7 +424,7 @@ static const LoggerConfig* FindLogger(std::string_view name)
 // Public API — all lock-free after Init()
 // ============================================================================
 
-void Fireland::Utils::Log::Init(const std::string& configFile)
+void Init(const std::string& configFile)
 {
     std::call_once(s_initFlag, [&configFile]
     {
@@ -437,7 +438,7 @@ void Fireland::Utils::Log::Init(const std::string& configFile)
     });
 }
 
-void Fireland::Utils::Log::Init(Level defaultLevel)
+void Init(Level defaultLevel)
 {
     std::call_once(s_initFlag, [defaultLevel]
     {
@@ -447,7 +448,7 @@ void Fireland::Utils::Log::Init(Level defaultLevel)
     });
 }
 
-bool Fireland::Utils::Log::ShouldLog(std::string_view logger, Level level)
+bool ShouldLog(std::string_view logger, Level level)
 {
     if (!s_initialized.load(std::memory_order_acquire))
         return static_cast<uint8_t>(level) <= static_cast<uint8_t>(Level::Info);
@@ -461,7 +462,7 @@ bool Fireland::Utils::Log::ShouldLog(std::string_view logger, Level level)
            static_cast<uint8_t>(level) <= static_cast<uint8_t>(max);
 }
 
-void Fireland::Utils::Log::Write(std::string_view logger, Level level, std::string_view message)
+void Write(std::string_view logger, Level level, std::string_view message)
 {
     if (!s_initialized.load(std::memory_order_acquire))
     {
@@ -482,14 +483,14 @@ void Fireland::Utils::Log::Write(std::string_view logger, Level level, std::stri
     }
 }
 
-void Fireland::Utils::Log::SetLevel(std::string_view logger, Level level)
+void SetLevel(std::string_view logger, Level level)
 {
     auto it = s_loggers.find(std::string(logger));
     if (it != s_loggers.end())
         it->second.maxLevel.store(level, std::memory_order_relaxed);
 }
 
-void Fireland::Utils::Log::SetConsoleEnabled(bool enabled)
+void SetConsoleEnabled(bool enabled)
 {
     for (auto& [name, appender] : s_appenders)
     {
@@ -497,3 +498,5 @@ void Fireland::Utils::Log::SetConsoleEnabled(bool enabled)
             appender->SetMaxLevel(enabled ? Level::Trace : Level::Disabled);
     }
 }
+
+} // namespace Fireland::Utils::Log

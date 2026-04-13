@@ -4,6 +4,7 @@
 
 # Shared libraries (order matters: Network depends on Utils)
 add_subdirectory(Utils)
+add_subdirectory(Crypto)
 add_subdirectory(Network)
 
 # Smoke-test executable
