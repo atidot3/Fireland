@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <memory>
 #include <vector>
+#include <thread>
 
 #include <boost/asio/thread_pool.hpp>
 #include <boost/asio/signal_set.hpp>
