@@ -3,7 +3,8 @@
 // ============================================================================
 // WorldSession — Coroutine-based WoW world protocol handler
 //
-// Handles one client connection through the auth handshake:
+// Handles one client connection through the Cata 4.3.4 handshake:
+//   ServerConnectionInit → ClientConnectionInit →
 //   SMSG_AUTH_CHALLENGE → CMSG_AUTH_SESSION → SMSG_AUTH_RESPONSE
 //
 // After authentication, enters the main packet dispatch loop.
@@ -36,6 +37,10 @@ public:
 
 private:
     Utils::Async::async<void> Run();
+
+    // ---- Connection initialization (Cata 4.3.4) ----
+    Utils::Async::async<void> SendConnectionInit();
+    Utils::Async::async<void> ReadConnectionInit();
 
     // ---- Auth handshake ----
     Utils::Async::async<void> SendAuthChallenge();

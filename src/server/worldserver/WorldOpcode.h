@@ -11,14 +11,18 @@
 
 #include <Utils/Describe.hpp>
 
-namespace Fireland::World {
+namespace Fireland::World
+{
+// ---- Cata 4.3.4 connection initialization strings -------------------------
+static const std::string SERVER_CONNECTION_INIT = "WORLD OF WARCRAFT CONNECTION - SERVER TO CLIENT";
+static const std::string CLIENT_CONNECTION_INIT = "WORLD OF WARCRAFT CONNECTION - CLIENT TO SERVER";
 
 // Server → Client opcodes (2-byte opcode in header)
 constexpr uint16_t SMSG_AUTH_CHALLENGE = 0x4542;
-constexpr uint16_t SMSG_AUTH_RESPONSE  = 0x0EC4;
+constexpr uint16_t SMSG_AUTH_RESPONSE  = 0x5DB6;
 
 // Client → Server opcodes (4-byte opcode in header)
-constexpr uint32_t CMSG_AUTH_SESSION = 0x04CF;
+constexpr uint32_t CMSG_AUTH_SESSION = 0x0449;
 
 // Expansion constant
 constexpr uint8_t EXPANSION_CATACLYSM = 3;

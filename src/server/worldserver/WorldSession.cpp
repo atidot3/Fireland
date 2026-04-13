@@ -59,6 +59,8 @@ async<void> WorldSession::Run()
 
     try
     {
+        co_await SendConnectionInit();
+        co_await ReadConnectionInit();
         co_await SendAuthChallenge();
         co_await HandleAuthSession();
 
@@ -76,6 +78,57 @@ async<void> WorldSession::Run()
     }
 
     FL_LOG_INFO("WorldSession", "[{}] Disconnected", _remoteAddress);
+}
+
+// ---- Connection initialization (Cata 4.3.4) -------------------------------
+
+async<void> WorldSession::SendConnectionInit()
+{
+    // Server → Client: [uint16_be size][string]
+    // The init packet uses a simplified header (size only, no opcode).
+    auto len = static_cast<uint16_t>(SERVER_CONNECTION_INIT.size());
+
+    ByteBuffer packet(2 + len);
+    packet << static_cast<uint8_t>(len >> 8)
+           << static_cast<uint8_t>(len & 0xFF);
+    packet.Append(SERVER_CONNECTION_INIT.data(), SERVER_CONNECTION_INIT.size());
+
+    FL_LOG_DEBUG("WorldSession", "[{}] Sending connection init ({} bytes)",
+        _remoteAddress, packet.Size());
+
+    co_await boost::asio::async_write(
+        _socket, boost::asio::buffer(packet.Storage()),
+        boost::asio::use_awaitable);
+}
+
+async<void> WorldSession::ReadConnectionInit()
+{
+    // Client → Server: [uint16_be size][string]
+    std::array<uint8_t, 2> sizeBuf{};
+    co_await boost::asio::async_read(
+        _socket, boost::asio::buffer(sizeBuf),
+        boost::asio::use_awaitable);
+
+    uint16_t size = (static_cast<uint16_t>(sizeBuf[0]) << 8) | sizeBuf[1];
+
+    std::vector<uint8_t> payload(size);
+    co_await boost::asio::async_read(
+        _socket, boost::asio::buffer(payload),
+        boost::asio::use_awaitable);
+
+    // Compare only up to expected length — client may send a trailing null terminator
+    auto compareLen = std::min(static_cast<std::size_t>(size), CLIENT_CONNECTION_INIT.size());
+    std::string_view initStr(reinterpret_cast<const char*>(payload.data()), compareLen);
+
+    if (initStr != CLIENT_CONNECTION_INIT)
+    {
+        FL_LOG_ERROR("WorldSession", "[{}] Invalid connection init (size={}, cmp={}): '{}'",
+            _remoteAddress, size, compareLen, initStr);
+        _socket.close();
+        co_return;
+    }
+
+    FL_LOG_DEBUG("WorldSession", "[{}] Connection init handshake completed", _remoteAddress);
 }
 
 // ---- SMSG_AUTH_CHALLENGE ---------------------------------------------------
