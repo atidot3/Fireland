@@ -10,8 +10,8 @@
 
 #include <Utils/Log.h>
 #include <Utils/ProgramOptions.h>
+#include <Utils/IoContext.h>
 
-#include <Network/IoContext.h>
 #include <Network/TcpListener.h>
 #include <Network/SessionManager.h>
 #include <Network/PacketBuffer.h>
@@ -47,12 +47,20 @@ int main(int argc, char* argv[])
 
     try
     {
-        IoContext       ioContext(THREAD_COUNT);
+        Fireland::Utils::IoContext ioContext(THREAD_COUNT);
         SessionManager  sessionManager(ioContext.Get());
-        TcpListener     listener(ioContext, sessionManager);
+
+        TcpListener<TcpSession> listener(
+            ioContext,
+            [&sessionManager](boost::asio::ip::tcp::socket socket) {
+                auto session = std::make_shared<TcpSession>(std::move(socket), sessionManager, OnPacketReceived);
+                sessionManager.Add(session);
+                return session;
+            }
+        );
 
         ioContext.InstallSignalHandlers();
-        listener.Listen(BIND_ADDRESS, BIND_PORT, OnPacketReceived);
+        listener.Listen(BIND_ADDRESS, BIND_PORT);
 
         FL_LOG_INFO("WorldServer", "Running. Press Ctrl+C to stop.");
 

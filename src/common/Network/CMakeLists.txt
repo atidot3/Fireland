@@ -16,7 +16,6 @@ set(sources_files
   IoContext.cpp
   PacketBuffer.cpp
   SessionManager.cpp
-  TcpListener.cpp
   TcpSession.cpp
 )
 

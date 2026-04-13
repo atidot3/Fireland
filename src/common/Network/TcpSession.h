@@ -32,7 +32,7 @@ namespace Fireland::Network
         /// Callback invoked when a complete packet has been received.
         using PacketHandler = std::function<void(Ptr session, PacketBuffer packet)>;
 
-        TcpSession(boost::asio::ip::tcp::socket socket, SessionManager& manager);
+        TcpSession(boost::asio::ip::tcp::socket socket, SessionManager& manager, PacketHandler handler);
         ~TcpSession();
 
         TcpSession(const TcpSession&) = delete;
@@ -45,7 +45,7 @@ namespace Fireland::Network
         const std::string& GetRemoteAddress() const noexcept { return _remoteAddress; }
 
         /// Start the read/write coroutine loops. Call once after accept.
-        void Start(PacketHandler handler);
+        void Start();
 
         /// Queue a packet for asynchronous sending.
         void Send(PacketBuffer packet);

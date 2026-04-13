@@ -10,42 +10,12 @@
 #include <cstdlib>
 #include <iostream>
 
-#include <boost/asio/co_spawn.hpp>
-#include <boost/asio/detached.hpp>
-#include <boost/asio/ip/tcp.hpp>
-#include <boost/asio/use_awaitable.hpp>
-
 #include <Utils/Log.h>
 #include <Utils/ProgramOptions.h>
 #include <Utils/IoContext.h>
+#include <Network/TcpListener.h>
 
 #include "AuthSession.h"
-
-using namespace boost::asio;
-
-static awaitable<void> AcceptLoop(ip::tcp::acceptor& acceptor)
-{
-    while (acceptor.is_open())
-    {
-        try
-        {
-            auto socket = co_await acceptor.async_accept(use_awaitable);
-            socket.set_option(ip::tcp::no_delay(true));
-
-            auto session = std::make_shared<Fireland::Auth::AuthSession>(std::move(socket));
-            co_spawn(
-                acceptor.get_executor(),
-                [session]() -> awaitable<void> { co_await session->Run(); },
-                detached);
-        }
-        catch (const boost::system::system_error& e)
-        {
-            if (e.code() == error::operation_aborted)
-                break;
-            FL_LOG_ERROR("AuthServer", "Accept error: {}", e.what());
-        }
-    }
-}
 
 int main(int argc, char* argv[])
 {
@@ -70,19 +40,17 @@ int main(int argc, char* argv[])
     {
         Fireland::Utils::IoContext ioContext(THREAD_COUNT);
 
-        ip::tcp::acceptor acceptor(ioContext.Get());
-        ip::tcp::endpoint endpoint(ip::make_address(BIND_ADDRESS), BIND_PORT);
-
-        acceptor.open(endpoint.protocol());
-        acceptor.set_option(ip::tcp::acceptor::reuse_address(true));
-        acceptor.bind(endpoint);
-        acceptor.listen(socket_base::max_listen_connections);
-
-        FL_LOG_INFO("AuthServer", "Listening on {}:{}", BIND_ADDRESS, BIND_PORT);
-
-        co_spawn(ioContext.Get(), AcceptLoop(acceptor), detached);
+        Fireland::Network::TcpListener<Fireland::Auth::AuthSession> listener(
+            ioContext,
+            [](boost::asio::ip::tcp::socket socket) {
+                return std::make_shared<Fireland::Auth::AuthSession>(std::move(socket));
+            }
+        );
 
         ioContext.InstallSignalHandlers();
+        listener.Listen(BIND_ADDRESS, BIND_PORT);
+
+        FL_LOG_INFO("AuthServer", "Running. Press Ctrl+C to stop.");
         ioContext.Join();
 
         FL_LOG_INFO("AuthServer", "Shutdown complete.");

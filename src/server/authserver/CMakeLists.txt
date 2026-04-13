@@ -22,6 +22,7 @@ target_link_libraries(authserver
         fireland_compiler_options
         fireland_utils
         fireland_crypto
+        fireland_network
 )
 
 set_target_properties(authserver PROPERTIES FOLDER "Server")

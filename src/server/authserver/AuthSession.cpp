@@ -1,26 +1,28 @@
 #include "AuthSession.h"
 #include "AuthOpcode.h"
 
-#include <algorithm>
 #include <array>
 #include <bit>
 #include <cctype>
 #include <ranges>
 #include <span>
-#include <utility>
 #include <vector>
 
 #include <boost/asio/read.hpp>
 #include <boost/asio/write.hpp>
 #include <boost/asio/use_awaitable.hpp>
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/detached.hpp>
 
 #include <Utils/Log.h>
 
 namespace Fireland::Auth {
 
+using Utils::Async::async;
+
 // ---- Hardcoded test account ------------------------------------------------
-static constexpr const char* HARDCODED_USERNAME = "TEST";
-static constexpr const char* HARDCODED_PASSWORD = "TEST";
+static constexpr std::string_view HARDCODED_USERNAME = "TEST";
+static constexpr std::string_view HARDCODED_PASSWORD = "TEST";
 
 static std::string ToUpper(std::string_view sv)
 {
@@ -33,12 +35,10 @@ static std::string ToUpper(std::string_view sv)
 
 static std::string HexStr(std::span<const uint8_t> data)
 {
-    std::string result;
-    result.reserve(data.size() * 3);
-    for (auto b : data)
-        result += std::format("{:02X} ", b);
-    if (!result.empty()) result.pop_back();
-    return result;
+    return data
+        | std::views::transform([](uint8_t b) { return std::format("{:02X}", b); })
+        | std::views::join_with(' ')
+        | std::ranges::to<std::string>();
 }
 
 // ---- Construction ----------------------------------------------------------
@@ -61,8 +61,20 @@ AuthSession::~AuthSession() noexcept
 
 // ---- Main coroutine --------------------------------------------------------
 
-boost::asio::awaitable<void> AuthSession::Run()
+void AuthSession::Start()
 {
+    auto self = shared_from_this();
+    boost::asio::co_spawn(
+        _socket.get_executor(),
+        self->Run(),
+        boost::asio::detached
+    );
+}
+
+async<void> AuthSession::Run()
+{
+    auto self = shared_from_this(); // prevent premature destruction
+
     FL_LOG_INFO("AuthSession", "Client connected from {}", _remoteAddress);
 
     try
@@ -110,7 +122,7 @@ boost::asio::awaitable<void> AuthSession::Run()
 
 // ---- LOGON_CHALLENGE -------------------------------------------------------
 
-boost::asio::awaitable<void> AuthSession::HandleLogonChallenge()
+async<void> AuthSession::HandleLogonChallenge()
 {
     // Read the rest of the fixed-size header (we already consumed the cmd byte)
     // AuthLogonChallenge_C minus the cmd byte = sizeof(AuthLogonChallenge_C) - 1
@@ -122,7 +134,7 @@ boost::asio::awaitable<void> AuthSession::HandleLogonChallenge()
         boost::asio::use_awaitable);
 
     FL_LOG_TRACE("AuthSession", "[{}] Challenge header ({} bytes): {}",
-        _remoteAddress, HEADER_REMAINING, HexStr(std::span<const uint8_t>(headerBuf.data(), HEADER_REMAINING)));
+        _remoteAddress, HEADER_REMAINING, HexStr(headerBuf));
 
     // Parse key fields from header for logging
     uint8_t  errorField = headerBuf[0];
@@ -176,22 +188,22 @@ boost::asio::awaitable<void> AuthSession::HandleLogonChallenge()
     response.reserve(119);
 
     response.push_back(std::to_underlying(AuthOpcode::CMD_AUTH_LOGON_CHALLENGE)); // cmd
-    response.push_back(0x00);                                                      // unk
-    response.push_back(std::to_underlying(AuthResult::SUCCESS));                    // error
+    response.push_back(0x00);                                                     // unk
+    response.push_back(std::to_underlying(AuthResult::SUCCESS));                  // error
 
     // B (32 bytes)
-    response.insert(response.end(), B_bytes.begin(), B_bytes.end());
+    response.append_range(B_bytes);
 
     // g_len + g
     response.push_back(static_cast<uint8_t>(g_bytes.size()));
-    response.insert(response.end(), g_bytes.begin(), g_bytes.end());
+    response.append_range(g_bytes);
 
     // N_len + N
     response.push_back(static_cast<uint8_t>(N_bytes.size()));
-    response.insert(response.end(), N_bytes.begin(), N_bytes.end());
+    response.append_range(N_bytes);
 
     // salt (32 bytes)
-    response.insert(response.end(), salt_bytes.begin(), salt_bytes.end());
+    response.append_range(salt_bytes);
 
     // CRC salt (16 zero bytes — not verified by client)
     response.insert(response.end(), 16, 0x00);
@@ -201,7 +213,7 @@ boost::asio::awaitable<void> AuthSession::HandleLogonChallenge()
 
     FL_LOG_DEBUG("AuthSession", "[{}] Sending challenge response ({} bytes)", _remoteAddress, response.size());
     FL_LOG_TRACE("AuthSession", "[{}] Challenge response: {}",
-        _remoteAddress, HexStr(std::span<const uint8_t>(response.data(), response.size())));
+        _remoteAddress, HexStr(response));
 
     co_await boost::asio::async_write(
         _socket, boost::asio::buffer(response),
@@ -212,7 +224,7 @@ boost::asio::awaitable<void> AuthSession::HandleLogonChallenge()
 
 // ---- LOGON_PROOF -----------------------------------------------------------
 
-boost::asio::awaitable<void> AuthSession::HandleLogonProof()
+async<void> AuthSession::HandleLogonProof()
 {
     // Read the rest of AuthLogonProof_C (cmd byte already consumed)
     constexpr std::size_t PROOF_REMAINING = sizeof(AuthLogonProof_C) - 1;
@@ -224,7 +236,7 @@ boost::asio::awaitable<void> AuthSession::HandleLogonProof()
 
     FL_LOG_DEBUG("AuthSession", "[{}] Logon proof received ({} bytes)", _remoteAddress, PROOF_REMAINING);
     FL_LOG_TRACE("AuthSession", "[{}] Proof raw: {}",
-        _remoteAddress, HexStr(std::span<const uint8_t>(proofBuf.data(), PROOF_REMAINING)));
+        _remoteAddress, HexStr(proofBuf));
 
     // Parse A and M1
     Crypto::BigNumber A;
@@ -234,9 +246,9 @@ boost::asio::awaitable<void> AuthSession::HandleLogonProof()
     std::ranges::copy_n(proofBuf.data() + 32, 20, clientM1.begin());
 
     FL_LOG_TRACE("AuthSession", "[{}] Client A ({} bytes): {}",
-        _remoteAddress, 32, HexStr(std::span<const uint8_t>(proofBuf.data(), 32)));
+        _remoteAddress, 32, HexStr(std::span{proofBuf}.first(32)));
     FL_LOG_TRACE("AuthSession", "[{}] Client M1 (20 bytes): {}",
-        _remoteAddress, HexStr(std::span<const uint8_t>(clientM1.data(), 20)));
+        _remoteAddress, HexStr(clientM1));
 
     if (!_srp.VerifyClientProof(A, clientM1))
     {
@@ -266,14 +278,14 @@ boost::asio::awaitable<void> AuthSession::HandleLogonProof()
     response.push_back(std::to_underlying(AuthResult::SUCCESS));              // error
 
     // M2 (20 bytes)
-    response.insert(response.end(), M2.begin(), M2.end());
+    response.append_range(M2);
 
     // account_flags (uint32) + survey_id (uint32) + login_flags (uint16)
     response.insert(response.end(), 10, 0x00);
 
     FL_LOG_DEBUG("AuthSession", "[{}] Sending proof success response ({} bytes)", _remoteAddress, response.size());
     FL_LOG_TRACE("AuthSession", "[{}] Proof response: {}",
-        _remoteAddress, HexStr(std::span<const uint8_t>(response.data(), response.size())));
+        _remoteAddress, HexStr(response));
 
     co_await boost::asio::async_write(
         _socket, boost::asio::buffer(response),
@@ -284,7 +296,7 @@ boost::asio::awaitable<void> AuthSession::HandleLogonProof()
 
 // ---- REALM_LIST ------------------------------------------------------------
 
-boost::asio::awaitable<void> AuthSession::HandleRealmList()
+async<void> AuthSession::HandleRealmList()
 {
     // Read 4-byte padding (cmd already consumed)
     std::array<uint8_t, 4> padding{};
@@ -295,8 +307,8 @@ boost::asio::awaitable<void> AuthSession::HandleRealmList()
     FL_LOG_DEBUG("AuthSession", "[{}] Realm list requested", _remoteAddress);
 
     // Build one hardcoded realm
-    const std::string realmName    = "Fireland";
-    const std::string realmAddress = "127.0.0.1:8085";
+    constexpr std::string_view realmName    = "Fireland";
+    constexpr std::string_view realmAddress = "127.0.0.1:8085";
 
     // Realm entry
     std::vector<uint8_t> realmData;
@@ -314,7 +326,7 @@ boost::asio::awaitable<void> AuthSession::HandleRealmList()
 
     // population (float, little-endian) — 0.5 = medium
     auto popBytes = std::bit_cast<std::array<uint8_t, 4>>(0.5f);
-    realmData.insert(realmData.end(), popBytes.begin(), popBytes.end());
+    realmData.append_range(popBytes);
 
     realmData.push_back(0x00);    // characters: 0
     realmData.push_back(0x01);    // timezone: 1
@@ -330,7 +342,7 @@ boost::asio::awaitable<void> AuthSession::HandleRealmList()
     body.push_back(static_cast<uint8_t>(realmCount & 0xFF));
     body.push_back(static_cast<uint8_t>((realmCount >> 8) & 0xFF));
 
-    body.insert(body.end(), realmData.begin(), realmData.end());
+    body.append_range(realmData);
 
     // footer
     body.push_back(0x10);
@@ -344,12 +356,12 @@ boost::asio::awaitable<void> AuthSession::HandleRealmList()
     response.push_back(static_cast<uint8_t>(bodySize & 0xFF));
     response.push_back(static_cast<uint8_t>((bodySize >> 8) & 0xFF));
 
-    response.insert(response.end(), body.begin(), body.end());
+    response.append_range(body);
 
     FL_LOG_DEBUG("AuthSession", "[{}] Sending realm list response ({} bytes, body={} bytes)",
         _remoteAddress, response.size(), bodySize);
     FL_LOG_TRACE("AuthSession", "[{}] Realm list response: {}",
-        _remoteAddress, HexStr(std::span<const uint8_t>(response.data(), response.size())));
+        _remoteAddress, HexStr(response));
 
     co_await boost::asio::async_write(
         _socket, boost::asio::buffer(response),
@@ -358,7 +370,7 @@ boost::asio::awaitable<void> AuthSession::HandleRealmList()
 
 // ---- Error helpers ---------------------------------------------------------
 
-boost::asio::awaitable<void> AuthSession::SendChallengeError(uint8_t error)
+async<void> AuthSession::SendChallengeError(uint8_t error)
 {
     std::array<uint8_t, 3> response = {
         std::to_underlying(AuthOpcode::CMD_AUTH_LOGON_CHALLENGE),
@@ -372,3 +384,4 @@ boost::asio::awaitable<void> AuthSession::SendChallengeError(uint8_t error)
 }
 
 } // namespace Fireland::Auth
+

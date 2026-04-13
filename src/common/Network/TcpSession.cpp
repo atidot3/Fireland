@@ -29,10 +29,11 @@ uint64_t TcpSession::NextId()
 // --------------------------------------------------------------------------
 // Construction / Destruction
 // --------------------------------------------------------------------------
-TcpSession::TcpSession(boost::asio::ip::tcp::socket socket, SessionManager& manager)
+TcpSession::TcpSession(boost::asio::ip::tcp::socket socket, SessionManager& manager, PacketHandler handler)
     : _id(NextId())
     , _socket(std::move(socket))
     , _manager(manager)
+    , _packetHandler(std::move(handler))
     , _sendNotify(_socket.get_executor(), boost::asio::steady_timer::time_point::max())
 {
     boost::system::error_code ec;
@@ -51,10 +52,8 @@ TcpSession::~TcpSession()
 // --------------------------------------------------------------------------
 // Public API
 // --------------------------------------------------------------------------
-void TcpSession::Start(PacketHandler handler)
+void TcpSession::Start()
 {
-    _packetHandler = std::move(handler);
-
     FL_LOG_INFO("TcpSession", "Session #{} connected from {}", _id, _remoteAddress);
 
     auto self = shared_from_this();
