@@ -10,6 +10,9 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <ranges>
+#include <span>
+#include <format>
 
 namespace Fireland::Utils::StringUtils
 {
@@ -105,5 +108,24 @@ namespace Fireland::Utils::StringUtils
             pos += to.size();
         }
         return str;
+    }
+
+	/// Convert to lowercase using views (C++20).
+    inline static std::string ToUpper(std::string_view sv)
+    {
+        return sv
+            | std::views::transform([](unsigned char c) -> char {
+            return static_cast<char>(std::toupper(c));
+                })
+            | std::ranges::to<std::string>();
+    }
+
+    /// Convert binary data to a hexadecimal string (C++20).
+    inline std::string HexStr(std::span<const uint8_t> data)
+    {
+        return data
+            | std::views::transform([](uint8_t b) { return std::format("{:02X}", b); })
+            | std::views::join_with(' ')
+            | std::ranges::to<std::string>();
     }
 } // namespace Fireland::Utils::StringUtils

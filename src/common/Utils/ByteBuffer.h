@@ -69,11 +69,18 @@ namespace Fireland::Utils
 
         /// Append a trivially-copyable value via <<.
         template <typename T>
-            requires (std::is_trivially_copyable_v<T> && !std::is_pointer_v<T>)
+            requires (std::is_trivially_copyable_v<T> && !std::is_pointer_v<T>
+                      && !std::is_convertible_v<T, std::string_view>)
         ByteBuffer& operator<<(const T& value)
         {
             Write(value);
             return *this;
+        }
+
+        /// Append a null-terminated C string via <<.
+        ByteBuffer& operator<<(std::string_view str)
+        {
+            return WriteCString(str);
         }
 
         /// Append raw bytes from a span via <<.

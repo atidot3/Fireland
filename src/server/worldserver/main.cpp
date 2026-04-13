@@ -1,8 +1,11 @@
 // ============================================================================
-// Fireland World Server — Entry point (stub)
+// Fireland World Server — Entry point
 //
-// Minimal TCP server using Boost.Asio C++20 coroutines.
+// Minimal world server using Boost.Asio C++20 coroutines.
 // Listens on 0.0.0.0:8085 (default WoW world port).
+//
+// After TCP accept, each client goes through the Cata 4.3.4 auth handshake:
+//   SMSG_AUTH_CHALLENGE → CMSG_AUTH_SESSION → SMSG_AUTH_RESPONSE
 // ============================================================================
 
 #include <cstdlib>
@@ -12,20 +15,10 @@
 #include <Utils/ProgramOptions.h>
 #include <Utils/IoContext.h>
 
+#include <Network/SessionKeyStore.h>
 #include <Network/TcpListener.h>
-#include <Network/SessionManager.h>
-#include <Network/PacketBuffer.h>
 
-using namespace Fireland::Network;
-
-static void OnPacketReceived(TcpSession::Ptr session, PacketBuffer packet)
-{
-    FL_LOG_INFO("WorldServer", "Session #{} received opcode 0x{:x} ({} bytes payload)",
-        session->GetId(), packet.GetOpcode(), packet.GetPayloadSize());
-
-    // Echo the packet back for now (placeholder for world logic)
-    session->Send(std::move(packet));
-}
+#include "WorldSession.h"
 
 int main(int argc, char* argv[])
 {
@@ -48,14 +41,13 @@ int main(int argc, char* argv[])
     try
     {
         Fireland::Utils::IoContext ioContext(THREAD_COUNT);
-        SessionManager  sessionManager(ioContext.Get());
 
-        TcpListener<TcpSession> listener(
+        Fireland::Network::SessionKeyStore sessionKeyStore(ioContext.Get());
+        Fireland::Network::TcpListener<Fireland::World::WorldSession> listener(
             ioContext,
-            [&sessionManager](boost::asio::ip::tcp::socket socket) {
-                auto session = std::make_shared<TcpSession>(std::move(socket), sessionManager, OnPacketReceived);
-                sessionManager.Add(session);
-                return session;
+            [&sessionKeyStore](boost::asio::ip::tcp::socket socket) {
+                return std::make_shared<Fireland::World::WorldSession>(
+                    std::move(socket), sessionKeyStore);
             }
         );
 

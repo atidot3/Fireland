@@ -3,10 +3,12 @@
 # ============================================================================
 
 set(headers_files
-    
+    WorldOpcode.h
+    WorldSession.h
 )
 
 set(sources_files
+  WorldSession.cpp
   main.cpp
 )
 
@@ -18,6 +20,7 @@ add_executable(worldserver
 target_link_libraries(worldserver
   PRIVATE
     fireland_compiler_options
+    fireland_crypto
     fireland_network
 )
 
