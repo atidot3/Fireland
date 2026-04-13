@@ -192,18 +192,18 @@ async<void> AuthSession::HandleLogonChallenge()
     response.push_back(std::to_underlying(AuthResult::SUCCESS));                  // error
 
     // B (32 bytes)
-    response.append_range(B_bytes);
+    response.insert(response.end(), B_bytes.begin(), B_bytes.end());
 
     // g_len + g
     response.push_back(static_cast<uint8_t>(g_bytes.size()));
-    response.append_range(g_bytes);
+    response.insert(response.end(), g_bytes.begin(), g_bytes.end());
 
     // N_len + N
     response.push_back(static_cast<uint8_t>(N_bytes.size()));
-    response.append_range(N_bytes);
+    response.insert(response.end(), N_bytes.begin(), N_bytes.end());
 
     // salt (32 bytes)
-    response.append_range(salt_bytes);
+    response.insert(response.end(), salt_bytes.begin(), salt_bytes.end());
 
     // CRC salt (16 zero bytes — not verified by client)
     response.insert(response.end(), 16, 0x00);
@@ -278,7 +278,7 @@ async<void> AuthSession::HandleLogonProof()
     response.push_back(std::to_underlying(AuthResult::SUCCESS));              // error
 
     // M2 (20 bytes)
-    response.append_range(M2);
+    response.insert(response.end(), M2.begin(), M2.end());
 
     // account_flags (uint32) + survey_id (uint32) + login_flags (uint16)
     response.insert(response.end(), 10, 0x00);
@@ -326,7 +326,7 @@ async<void> AuthSession::HandleRealmList()
 
     // population (float, little-endian) — 0.5 = medium
     auto popBytes = std::bit_cast<std::array<uint8_t, 4>>(0.5f);
-    realmData.append_range(popBytes);
+    realmData.insert(realmData.end(), popBytes.begin(), popBytes.end());
 
     realmData.push_back(0x00);    // characters: 0
     realmData.push_back(0x01);    // timezone: 1
@@ -342,7 +342,7 @@ async<void> AuthSession::HandleRealmList()
     body.push_back(static_cast<uint8_t>(realmCount & 0xFF));
     body.push_back(static_cast<uint8_t>((realmCount >> 8) & 0xFF));
 
-    body.append_range(realmData);
+    body.insert(body.end(), realmData.begin(), realmData.end());
 
     // footer
     body.push_back(0x10);
@@ -356,7 +356,7 @@ async<void> AuthSession::HandleRealmList()
     response.push_back(static_cast<uint8_t>(bodySize & 0xFF));
     response.push_back(static_cast<uint8_t>((bodySize >> 8) & 0xFF));
 
-    response.append_range(body);
+    response.insert(response.end(), body.begin(), body.end());
 
     FL_LOG_DEBUG("AuthSession", "[{}] Sending realm list response ({} bytes, body={} bytes)",
         _remoteAddress, response.size(), bodySize);
