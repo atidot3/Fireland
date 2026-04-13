@@ -8,6 +8,7 @@
 set(headers_files
     Async.hpp
     ByteBuffer.h
+    Describe.hpp
     IoContext.h
     Log.h
     ProgramOptions.h

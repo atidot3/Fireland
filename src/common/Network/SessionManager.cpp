@@ -9,6 +9,7 @@
 #include <Utils/Log.h>
 
 using namespace Fireland::Network;
+using namespace Fireland::Utils::Async;
 
 SessionManager::SessionManager(boost::asio::any_io_executor exec) noexcept
     : _strand(exec)
@@ -35,9 +36,9 @@ void SessionManager::Remove(TcpSession::Ptr session)
 	boost::asio::post(_strand, lambda);
 }
 
-utils::async<std::size_t> SessionManager::Count() const
+async<std::size_t> SessionManager::Count() const
 {
-    auto lambda = [this]() -> utils::async<std::size_t>
+    auto lambda = [this]() -> async<std::size_t>
     {
         co_return _sessions.size();
     };
@@ -66,10 +67,10 @@ void SessionManager::ForEach(const std::function<void(TcpSession::Ptr)>& fn) con
 	boost::asio::post(_strand, lambda);
 }
 
-utils::async<void> SessionManager::ForEachAsync(const AsyncSessionHandler& fn) const
+async<void> SessionManager::ForEachAsync(const AsyncSessionHandler& fn) const
 {
 	// Snapshot session list on the strand, then co_await each callback.
-	auto snapshotLambda = [this]() -> utils::async<std::vector<TcpSession::Ptr>>
+	auto snapshotLambda = [this]() -> async<std::vector<TcpSession::Ptr>>
 	{
 		std::vector<TcpSession::Ptr> snapshot;
 		snapshot.reserve(_sessions.size());

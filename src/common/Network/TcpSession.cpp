@@ -13,7 +13,8 @@
 #include <boost/asio/redirect_error.hpp>
 #include <Utils/Log.h>
 
-namespace Fireland::Network {
+using namespace Fireland::Network;
+using namespace Fireland::Utils::Async;
 
 // --------------------------------------------------------------------------
 // Static id generator
@@ -106,7 +107,7 @@ bool TcpSession::IsOpen() const noexcept
 // --------------------------------------------------------------------------
 // ReadLoop coroutine
 // --------------------------------------------------------------------------
-utils::async<void> TcpSession::ReadLoop()
+async<void> TcpSession::ReadLoop()
 {
     try
     {
@@ -174,7 +175,7 @@ utils::async<void> TcpSession::ReadLoop()
 // --------------------------------------------------------------------------
 // WriteLoop coroutine
 // --------------------------------------------------------------------------
-utils::async<void> TcpSession::WriteLoop()
+async<void> TcpSession::WriteLoop()
 {
     try
     {
@@ -213,5 +214,3 @@ utils::async<void> TcpSession::WriteLoop()
         }
     }
 }
-
-} // namespace Fireland::Network

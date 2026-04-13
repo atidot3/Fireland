@@ -31,27 +31,14 @@
 #   include <Windows.h>
 #endif
 
-namespace Fireland::Utils::Log {
+using namespace Fireland::Utils::Log;
+using namespace Fireland::Utils::Describe;
 
 // ============================================================================
 // Constants
 // ============================================================================
 
 static constexpr int LABEL_WIDTH = 7;
-
-static const char* LabelForLevel(Level lvl)
-{
-    switch (lvl)
-    {
-        case Level::Fatal:   return "FATAL";
-        case Level::Error:   return "ERROR";
-        case Level::Warning: return "WARNING";
-        case Level::Info:    return "INFO";
-        case Level::Debug:   return "DEBUG";
-        case Level::Trace:   return "TRACE";
-        default:             return "???";
-    }
-}
 
 // ============================================================================
 // ANSI colour table (indexed 0-14, TrinityCore convention)
@@ -168,7 +155,7 @@ public:
 
         if (_flags & FLAG_LOGLEVEL)
             oss << color << "[" << std::left << std::setw(LABEL_WIDTH)
-                << LabelForLevel(level) << "] " << ANSI_RESET;
+                << to_string(level) << "] " << ANSI_RESET;
 
         if (_flags & FLAG_LOGGERNAME)
             oss << "\033[90m[" << logger << "] " << ANSI_RESET;
@@ -211,7 +198,7 @@ public:
 
         if (_flags & FLAG_LOGLEVEL)
             oss << "[" << std::left << std::setw(LABEL_WIDTH)
-                  << LabelForLevel(level) << "] ";
+                  << to_string(level) << "] ";
 
         if (_flags & FLAG_LOGGERNAME)
             oss << "[" << logger << "] ";
@@ -436,7 +423,7 @@ static const LoggerConfig* FindLogger(std::string_view name)
 // Public API — all lock-free after Init()
 // ============================================================================
 
-void Init(const std::string& configFile)
+void Fireland::Utils::Log::Init(const std::string& configFile)
 {
     std::call_once(s_initFlag, [&configFile]
     {
@@ -450,7 +437,7 @@ void Init(const std::string& configFile)
     });
 }
 
-void Init(Level defaultLevel)
+void Fireland::Utils::Log::Init(Level defaultLevel)
 {
     std::call_once(s_initFlag, [defaultLevel]
     {
@@ -460,7 +447,7 @@ void Init(Level defaultLevel)
     });
 }
 
-bool ShouldLog(std::string_view logger, Level level)
+bool Fireland::Utils::Log::ShouldLog(std::string_view logger, Level level)
 {
     if (!s_initialized.load(std::memory_order_acquire))
         return static_cast<uint8_t>(level) <= static_cast<uint8_t>(Level::Info);
@@ -474,12 +461,12 @@ bool ShouldLog(std::string_view logger, Level level)
            static_cast<uint8_t>(level) <= static_cast<uint8_t>(max);
 }
 
-void Write(std::string_view logger, Level level, std::string_view message)
+void Fireland::Utils::Log::Write(std::string_view logger, Level level, std::string_view message)
 {
     if (!s_initialized.load(std::memory_order_acquire))
     {
         std::cout << "[" << std::left << std::setw(LABEL_WIDTH)
-                  << LabelForLevel(level) << "] "
+                  << to_string(level) << "] "
                   << "[" << logger << "] " << message << std::endl;
         return;
     }
@@ -495,14 +482,14 @@ void Write(std::string_view logger, Level level, std::string_view message)
     }
 }
 
-void SetLevel(std::string_view logger, Level level)
+void Fireland::Utils::Log::SetLevel(std::string_view logger, Level level)
 {
     auto it = s_loggers.find(std::string(logger));
     if (it != s_loggers.end())
         it->second.maxLevel.store(level, std::memory_order_relaxed);
 }
 
-void SetConsoleEnabled(bool enabled)
+void Fireland::Utils::Log::SetConsoleEnabled(bool enabled)
 {
     for (auto& [name, appender] : s_appenders)
     {
@@ -510,5 +497,3 @@ void SetConsoleEnabled(bool enabled)
             appender->SetMaxLevel(enabled ? Level::Trace : Level::Disabled);
     }
 }
-
-} // namespace Fireland::Utils::Log

@@ -25,47 +25,49 @@
 #include <string_view>
 #include <utility>
 
-namespace Fireland::Utils::Log {
+#include "Describe.hpp"
 
-// ---- Severity levels (matches TrinityCore convention) ----------------------
-// Lower value = more critical.  A logger configured at level N accepts
-// all messages with level <= N.
-enum class Level : uint8_t
+namespace Fireland::Utils::Log
 {
-    Disabled = 0,
-    Fatal    = 1,
-    Error    = 2,
-    Warning  = 3,
-    Info     = 4,
-    Debug    = 5,
-    Trace    = 6,
-};
+    // ---- Severity levels (matches TrinityCore convention) ----------------------
+    // Lower value = more critical.  A logger configured at level N accepts
+    // all messages with level <= N.
+    enum class Level : uint8_t
+    {
+        Disabled = 0,
+        Fatal    = 1,
+        Error    = 2,
+        Warning  = 3,
+        Info     = 4,
+        Debug    = 5,
+        Trace    = 6,
+    };
+	BOOST_DESCRIBE_ENUM(Level, Disabled, Fatal, Error, Warning, Info, Debug, Trace);
 
-/// Initialise from a config file.  Falls back to defaults if not found.
-void Init(const std::string& configFile);
+    /// Initialise from a config file.  Falls back to defaults if not found.
+    void Init(const std::string& configFile);
 
-/// Initialise with a default console appender at the given level.
-void Init(Level defaultLevel = Level::Info);
+    /// Initialise with a default console appender at the given level.
+    void Init(Level defaultLevel = Level::Info);
 
-/// Check if a logger would accept a message at the given level.
-bool ShouldLog(std::string_view logger, Level level);
+    /// Check if a logger would accept a message at the given level.
+    bool ShouldLog(std::string_view logger, Level level);
 
-/// Write a log message for a given logger and level.
-void Write(std::string_view logger, Level level, std::string_view message);
+    /// Write a log message for a given logger and level.
+    void Write(std::string_view logger, Level level, std::string_view message);
 
-/// Change the severity of an existing logger at runtime.
-void SetLevel(std::string_view logger, Level level);
+    /// Change the severity of an existing logger at runtime.
+    void SetLevel(std::string_view logger, Level level);
 
-/// Disable/enable the console appender (for --quiet mode).
-void SetConsoleEnabled(bool enabled);
+    /// Disable/enable the console appender (for --quiet mode).
+    void SetConsoleEnabled(bool enabled);
 
-/// Format helper — wraps std::format.  Called by FL_LOG_* macros.
-template <typename... Args>
-std::string Format(std::format_string<Args...> fmt, Args&&... args)
-{
-    return std::format(fmt, std::forward<Args>(args)...);
-}
-
+    /// Format helper — wraps std::format.  Called by FL_LOG_* macros.
+    template <typename... Args>
+    std::string Format(std::format_string<Args...> fmt, Args&&... args)
+    {
+        return std::format(fmt, std::forward<Args>(args)...);
+    }
 } // namespace Fireland::Utils::Log
 
 // ---- Convenience macros (std::format API with logger tag) ------------------

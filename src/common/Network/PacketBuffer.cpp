@@ -7,7 +7,7 @@
 #include <cassert>
 #include <cstring>
 
-namespace Fireland::Network {
+using namespace Fireland::Network;
 
 PacketBuffer::PacketBuffer(uint16_t opcode)
 {
@@ -48,5 +48,3 @@ PacketHeader PacketBuffer::DeserializeHeader(std::span<const uint8_t, PacketHead
     std::memcpy(&hdr.opcode, raw.data() + 2, sizeof(hdr.opcode));
     return hdr;
 }
-
-} // namespace Fireland::Network

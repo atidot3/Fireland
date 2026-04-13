@@ -11,7 +11,7 @@
 #include <boost/asio/detached.hpp>
 #include <boost/asio/system_timer.hpp>
 
-namespace utils
+namespace Fireland::Utils::Async
 {
 	template<typename T>
 	using async = boost::asio::awaitable<T>;

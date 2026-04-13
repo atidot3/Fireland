@@ -9,7 +9,8 @@
 
 #include <Utils/Log.h>
 
-namespace Fireland::Network {
+using namespace Fireland::Network;
+using namespace Fireland::Utils::Async;
 
 TcpListener::TcpListener(IoContext& ioContext, SessionManager& sessionManager)
     : _ioContext(ioContext)
@@ -50,7 +51,7 @@ void TcpListener::Stop()
     FL_LOG_INFO("TcpListener", "Stopped");
 }
 
-utils::async<void> TcpListener::AcceptLoop(TcpSession::PacketHandler handler)
+async<void> TcpListener::AcceptLoop(TcpSession::PacketHandler handler)
 {
     while (_acceptor.is_open())
     {
@@ -74,5 +75,3 @@ utils::async<void> TcpListener::AcceptLoop(TcpSession::PacketHandler handler)
         }
     }
 }
-
-} // namespace Fireland::Network

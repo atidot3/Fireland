@@ -7,7 +7,7 @@
 #include <boost/asio/signal_set.hpp>
 #include <Utils/Log.h>
 
-namespace Fireland::Utils {
+using namespace Fireland::Utils;
 
 IoContext::IoContext(std::size_t threadCount)
     : _pool(threadCount > 0 ? threadCount : 1)
@@ -44,5 +44,3 @@ void IoContext::InstallSignalHandlers()
         }
     });
 }
-
-} // namespace Fireland::Utils
