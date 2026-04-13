@@ -4,6 +4,7 @@
 #include <array>
 #include <bit>
 #include <cctype>
+#include <random>
 #include <ranges>
 #include <span>
 #include <vector>
@@ -15,14 +16,16 @@
 #include <boost/asio/detached.hpp>
 
 #include <Utils/Log.h>
+#include <Utils/ByteBuffer.h>
 
 namespace Fireland::Auth {
 
 using Utils::Async::async;
+using Utils::ByteBuffer;
 
 // ---- Hardcoded test account ------------------------------------------------
-static constexpr std::string_view HARDCODED_USERNAME = "TEST";
-static constexpr std::string_view HARDCODED_PASSWORD = "TEST";
+static constexpr std::string_view HARDCODED_USERNAME = "ATIDOTE";
+static constexpr std::string_view HARDCODED_PASSWORD = "ATIDOTE";
 
 static std::string ToUpper(std::string_view sv)
 {
@@ -43,8 +46,9 @@ static std::string HexStr(std::span<const uint8_t> data)
 
 // ---- Construction ----------------------------------------------------------
 
-AuthSession::AuthSession(boost::asio::ip::tcp::socket socket) noexcept
+AuthSession::AuthSession(boost::asio::ip::tcp::socket socket, Network::SessionKeyStore& keyStore) noexcept
     : _socket(std::move(socket))
+    , _keyStore(keyStore)
 {
     boost::system::error_code ec;
     auto ep = _socket.remote_endpoint(ec);
@@ -52,6 +56,8 @@ AuthSession::AuthSession(boost::asio::ip::tcp::socket socket) noexcept
         _remoteAddress = std::format("{}:{}", ep.address().to_string(), ep.port());
     else
         _remoteAddress = "<unknown>";
+
+    InitRealms();
 }
 
 AuthSession::~AuthSession() noexcept
@@ -95,6 +101,14 @@ async<void> AuthSession::Run()
 
                 case AuthOpcode::CMD_AUTH_LOGON_PROOF:
                     co_await HandleLogonProof();
+                    break;
+
+                case AuthOpcode::CMD_AUTH_RECONNECT_CHALLENGE:
+                    co_await HandleReconnectChallenge();
+                    break;
+
+                case AuthOpcode::CMD_AUTH_RECONNECT_PROOF:
+                    co_await HandleReconnectProof();
                     break;
 
                 case AuthOpcode::CMD_REALM_LIST:
@@ -184,39 +198,23 @@ async<void> AuthSession::HandleLogonChallenge()
     FL_LOG_TRACE("AuthSession", "[{}] SRP6 salt ({} bytes): {}",
         _remoteAddress, salt_bytes.size(), HexStr(salt_bytes));
 
-    std::vector<uint8_t> response;
-    response.reserve(119);
+    ByteBuffer response(119);
+    response << std::to_underlying(AuthOpcode::CMD_AUTH_LOGON_CHALLENGE) // cmd
+             << uint8_t(0x00)                                           // unk
+             << std::to_underlying(AuthResult::SUCCESS)                  // error
+             << B_bytes                                                  // B (32 bytes)
+             << static_cast<uint8_t>(g_bytes.size()) << g_bytes          // g_len + g
+             << static_cast<uint8_t>(N_bytes.size()) << N_bytes          // N_len + N
+             << salt_bytes;                                              // salt (32 bytes)
+    response.Pad(16);                                                    // CRC salt (16 zero bytes)
+    response << uint8_t(0x00);                                           // security_flags
 
-    response.push_back(std::to_underlying(AuthOpcode::CMD_AUTH_LOGON_CHALLENGE)); // cmd
-    response.push_back(0x00);                                                     // unk
-    response.push_back(std::to_underlying(AuthResult::SUCCESS));                  // error
-
-    // B (32 bytes)
-    response.insert(response.end(), B_bytes.begin(), B_bytes.end());
-
-    // g_len + g
-    response.push_back(static_cast<uint8_t>(g_bytes.size()));
-    response.insert(response.end(), g_bytes.begin(), g_bytes.end());
-
-    // N_len + N
-    response.push_back(static_cast<uint8_t>(N_bytes.size()));
-    response.insert(response.end(), N_bytes.begin(), N_bytes.end());
-
-    // salt (32 bytes)
-    response.insert(response.end(), salt_bytes.begin(), salt_bytes.end());
-
-    // CRC salt (16 zero bytes — not verified by client)
-    response.insert(response.end(), 16, 0x00);
-
-    // security_flags
-    response.push_back(0x00);
-
-    FL_LOG_DEBUG("AuthSession", "[{}] Sending challenge response ({} bytes)", _remoteAddress, response.size());
+    FL_LOG_DEBUG("AuthSession", "[{}] Sending challenge response ({} bytes)", _remoteAddress, response.Size());
     FL_LOG_TRACE("AuthSession", "[{}] Challenge response: {}",
-        _remoteAddress, HexStr(response));
+        _remoteAddress, HexStr(response.Data()));
 
     co_await boost::asio::async_write(
-        _socket, boost::asio::buffer(response),
+        _socket, boost::asio::buffer(response.Storage()),
         boost::asio::use_awaitable);
 
     FL_LOG_DEBUG("AuthSession", "[{}] Challenge response sent, waiting for proof...", _remoteAddress);
@@ -254,13 +252,12 @@ async<void> AuthSession::HandleLogonProof()
     {
         FL_LOG_WARNING("AuthSession", "[{}] Invalid logon proof (SRP6 verification failed) for '{}'", _remoteAddress, _username);
 
-        std::array<uint8_t, 4> fail = {
-            std::to_underlying(AuthOpcode::CMD_AUTH_LOGON_PROOF),
-            std::to_underlying(AuthResult::FAIL_INCORRECT_PASSWORD),
-            0x03, 0x00
-        };
+        ByteBuffer fail(4);
+        fail << std::to_underlying(AuthOpcode::CMD_AUTH_LOGON_PROOF)
+             << std::to_underlying(AuthResult::FAIL_INCORRECT_PASSWORD)
+             << uint8_t(0x03) << uint8_t(0x00);
         co_await boost::asio::async_write(
-            _socket, boost::asio::buffer(fail),
+            _socket, boost::asio::buffer(fail.Storage()),
             boost::asio::use_awaitable);
         co_return;
     }
@@ -268,30 +265,169 @@ async<void> AuthSession::HandleLogonProof()
     FL_LOG_INFO("AuthSession", "[{}] '{}' authenticated successfully", _remoteAddress, _username);
     _authenticated = true;
 
+    // Store session key for future reconnects
+    _keyStore.Store(_username, _srp.GetSessionKey());
+
     // Build success response
     auto& M2 = _srp.GetServerProof();
 
-    std::vector<uint8_t> response;
-    response.reserve(32);
+    ByteBuffer response(32);
+    response << std::to_underlying(AuthOpcode::CMD_AUTH_LOGON_PROOF) // cmd
+             << std::to_underlying(AuthResult::SUCCESS)              // error
+             << M2;                                                  // M2 (20 bytes)
+    response.Pad(10); // account_flags (uint32) + survey_id (uint32) + login_flags (uint16)
 
-    response.push_back(std::to_underlying(AuthOpcode::CMD_AUTH_LOGON_PROOF)); // cmd
-    response.push_back(std::to_underlying(AuthResult::SUCCESS));              // error
-
-    // M2 (20 bytes)
-    response.insert(response.end(), M2.begin(), M2.end());
-
-    // account_flags (uint32) + survey_id (uint32) + login_flags (uint16)
-    response.insert(response.end(), 10, 0x00);
-
-    FL_LOG_DEBUG("AuthSession", "[{}] Sending proof success response ({} bytes)", _remoteAddress, response.size());
+    FL_LOG_DEBUG("AuthSession", "[{}] Sending proof success response ({} bytes)", _remoteAddress, response.Size());
     FL_LOG_TRACE("AuthSession", "[{}] Proof response: {}",
-        _remoteAddress, HexStr(response));
+        _remoteAddress, HexStr(response.Data()));
 
     co_await boost::asio::async_write(
-        _socket, boost::asio::buffer(response),
+        _socket, boost::asio::buffer(response.Storage()),
         boost::asio::use_awaitable);
 
     FL_LOG_DEBUG("AuthSession", "[{}] Proof response sent, waiting for realm list request...", _remoteAddress);
+}
+
+// ---- RECONNECT_CHALLENGE ---------------------------------------------------
+
+async<void> AuthSession::HandleReconnectChallenge()
+{
+    // Same header format as logon challenge (minus the cmd byte we already consumed)
+    constexpr std::size_t HEADER_REMAINING = sizeof(AuthLogonChallenge_C) - 1;
+
+    std::array<uint8_t, HEADER_REMAINING> headerBuf{};
+    co_await boost::asio::async_read(
+        _socket, boost::asio::buffer(headerBuf),
+        boost::asio::use_awaitable);
+
+    // account_len is the last byte of the fixed header
+    uint8_t accountLen = headerBuf[HEADER_REMAINING - 1];
+
+    // Read the account name
+    std::vector<uint8_t> accountBuf(accountLen);
+    co_await boost::asio::async_read(
+        _socket, boost::asio::buffer(accountBuf),
+        boost::asio::use_awaitable);
+
+    std::string rawAccount(accountBuf.begin(), accountBuf.end());
+    _username = ToUpper(rawAccount);
+
+    FL_LOG_INFO("AuthSession", "[{}] Reconnect challenge for '{}'", _remoteAddress, _username);
+
+    // Look up stored session key
+    auto storedKey = co_await _keyStore.Lookup(_username);
+    if (!storedKey)
+    {
+        FL_LOG_WARNING("AuthSession", "[{}] Reconnect failed: no session key stored for '{}'",
+            _remoteAddress, _username);
+
+        ByteBuffer fail(3);
+        fail << std::to_underlying(AuthOpcode::CMD_AUTH_RECONNECT_CHALLENGE)
+             << std::to_underlying(AuthResult::FAIL_UNKNOWN_ACCOUNT);
+        co_await boost::asio::async_write(
+            _socket, boost::asio::buffer(fail.Storage()),
+            boost::asio::use_awaitable);
+        co_return;
+    }
+
+    // Generate 16 random bytes for the reconnect proof
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<unsigned> dist(0, 255);
+    for (auto& byte : _reconnectRand)
+        byte = static_cast<uint8_t>(dist(gen));
+
+    FL_LOG_DEBUG("AuthSession", "[{}] Sending reconnect challenge (16 random bytes)", _remoteAddress);
+    FL_LOG_TRACE("AuthSession", "[{}] Reconnect rand: {}",
+        _remoteAddress, HexStr(_reconnectRand));
+
+    // Response: cmd(1) + error(1) + reconnect_rand(16) + zeros(16)
+    ByteBuffer response(34);
+    response << std::to_underlying(AuthOpcode::CMD_AUTH_RECONNECT_CHALLENGE)
+             << std::to_underlying(AuthResult::SUCCESS);
+    response.Append(_reconnectRand.data(), _reconnectRand.size());
+    response.Pad(16);  // 16 zero bytes
+
+    co_await boost::asio::async_write(
+        _socket, boost::asio::buffer(response.Storage()),
+        boost::asio::use_awaitable);
+
+    FL_LOG_DEBUG("AuthSession", "[{}] Reconnect challenge sent, waiting for reconnect proof...", _remoteAddress);
+}
+
+// ---- RECONNECT_PROOF -------------------------------------------------------
+
+async<void> AuthSession::HandleReconnectProof()
+{
+    // Read the rest of AuthReconnectProof_C (cmd already consumed)
+    constexpr std::size_t PROOF_REMAINING = sizeof(AuthReconnectProof_C) - 1;
+
+    std::array<uint8_t, PROOF_REMAINING> proofBuf{};
+    co_await boost::asio::async_read(
+        _socket, boost::asio::buffer(proofBuf),
+        boost::asio::use_awaitable);
+
+    FL_LOG_DEBUG("AuthSession", "[{}] Reconnect proof received ({} bytes)", _remoteAddress, PROOF_REMAINING);
+
+    // Parse R1 (16 bytes) and R2 (20 bytes)
+    std::span<const uint8_t> R1(proofBuf.data(), 16);
+    std::span<const uint8_t> R2(proofBuf.data() + 16, 20);
+
+    FL_LOG_TRACE("AuthSession", "[{}] R1: {}", _remoteAddress, HexStr(R1));
+    FL_LOG_TRACE("AuthSession", "[{}] R2: {}", _remoteAddress, HexStr(R2));
+
+    // Look up stored session key
+    auto storedKey = co_await _keyStore.Lookup(_username);
+    if (!storedKey)
+    {
+        FL_LOG_WARNING("AuthSession", "[{}] Reconnect proof failed: no session key for '{}'",
+            _remoteAddress, _username);
+
+        ByteBuffer fail(2);
+        fail << std::to_underlying(AuthOpcode::CMD_AUTH_RECONNECT_PROOF)
+             << std::to_underlying(AuthResult::FAIL_UNKNOWN_ACCOUNT);
+        co_await boost::asio::async_write(
+            _socket, boost::asio::buffer(fail.Storage()),
+            boost::asio::use_awaitable);
+        co_return;
+    }
+
+    // Verify: R2 == SHA1(username, R1, reconnect_rand, K)
+    Crypto::SHA1 sha;
+    sha.Update(_username);
+    sha.Update(R1);
+    sha.Update(std::span<const uint8_t>(_reconnectRand));
+    sha.Update(std::span<const uint8_t>(*storedKey));
+    auto expected = sha.Finalize();
+
+    if (!std::ranges::equal(R2, expected))
+    {
+        FL_LOG_WARNING("AuthSession", "[{}] Reconnect proof verification failed for '{}'",
+            _remoteAddress, _username);
+
+        ByteBuffer fail(2);
+        fail << std::to_underlying(AuthOpcode::CMD_AUTH_RECONNECT_PROOF)
+             << std::to_underlying(AuthResult::FAIL_INCORRECT_PASSWORD);
+        co_await boost::asio::async_write(
+            _socket, boost::asio::buffer(fail.Storage()),
+            boost::asio::use_awaitable);
+        co_return;
+    }
+
+    FL_LOG_INFO("AuthSession", "[{}] '{}' reconnected successfully", _remoteAddress, _username);
+    _authenticated = true;
+
+    // Response: cmd(1) + error(1) + padding(2)
+    ByteBuffer response(4);
+    response << std::to_underlying(AuthOpcode::CMD_AUTH_RECONNECT_PROOF)
+             << std::to_underlying(AuthResult::SUCCESS);
+    response.Pad(2);
+
+    co_await boost::asio::async_write(
+        _socket, boost::asio::buffer(response.Storage()),
+        boost::asio::use_awaitable);
+
+    FL_LOG_DEBUG("AuthSession", "[{}] Reconnect proof accepted, waiting for realm list...", _remoteAddress);
 }
 
 // ---- REALM_LIST ------------------------------------------------------------
@@ -306,80 +442,89 @@ async<void> AuthSession::HandleRealmList()
 
     FL_LOG_DEBUG("AuthSession", "[{}] Realm list requested", _remoteAddress);
 
-    // Build one hardcoded realm
-    constexpr std::string_view realmName    = "Fireland";
-    constexpr std::string_view realmAddress = "127.0.0.1:8085";
+    // Resolve the client IP (without port) for address selection
+    boost::system::error_code ec;
+    auto clientEp = _socket.remote_endpoint(ec);
+    auto clientAddr = ec ? boost::asio::ip::make_address("127.0.0.1") : clientEp.address();
 
-    // Realm entry
-    std::vector<uint8_t> realmData;
-    realmData.push_back(0x00);    // type: Normal
-    realmData.push_back(0x00);    // locked: no
-    realmData.push_back(0x00);    // flags: none
+    // Build realm entries
+    ByteBuffer realmData;
+    for (auto const& realm : _realms)
+    {
+        std::string address = realm.GetAddressStringForClient(clientAddr);
 
-    // name (null-terminated)
-    realmData.insert(realmData.end(), realmName.begin(), realmName.end());
-    realmData.push_back(0x00);
+        FL_LOG_DEBUG("AuthSession", "[{}] Realm '{}' -> {} for client {}",
+            _remoteAddress, realm.Name, address, clientAddr.to_string());
 
-    // address (null-terminated)
-    realmData.insert(realmData.end(), realmAddress.begin(), realmAddress.end());
-    realmData.push_back(0x00);
-
-    // population (float, little-endian) — 0.5 = medium
-    auto popBytes = std::bit_cast<std::array<uint8_t, 4>>(0.5f);
-    realmData.insert(realmData.end(), popBytes.begin(), popBytes.end());
-
-    realmData.push_back(0x00);    // characters: 0
-    realmData.push_back(0x01);    // timezone: 1
-    realmData.push_back(0x01);    // realm id: 1
+        realmData << realm.Type
+                  << realm.Locked
+                  << realm.Flags;
+        realmData << std::string_view(realm.Name);
+        realmData << std::string_view(address);
+        realmData << realm.Population
+                  << realm.Characters
+                  << realm.Timezone
+                  << realm.Id;
+    }
 
     // Build full response
     // body = uint32 padding(0) + uint16 realm_count + realm data + uint16 footer(0x0010)
-    std::vector<uint8_t> body;
-    body.resize(4, 0x00);         // padding
-
-    // realm_count (uint16, little-endian)
-    uint16_t realmCount = 1;
-    body.push_back(static_cast<uint8_t>(realmCount & 0xFF));
-    body.push_back(static_cast<uint8_t>((realmCount >> 8) & 0xFF));
-
-    body.insert(body.end(), realmData.begin(), realmData.end());
-
-    // footer
-    body.push_back(0x10);
-    body.push_back(0x00);
+    ByteBuffer body;
+    body.Pad(4);                  // padding
+    body << static_cast<uint16_t>(_realms.size())
+         << realmData             // realm data
+         << uint8_t(0x10)         // footer
+         << uint8_t(0x00);
 
     // Header: opcode + uint16 body size
-    std::vector<uint8_t> response;
-    response.push_back(std::to_underlying(AuthOpcode::CMD_REALM_LIST));
-
-    uint16_t bodySize = static_cast<uint16_t>(body.size());
-    response.push_back(static_cast<uint8_t>(bodySize & 0xFF));
-    response.push_back(static_cast<uint8_t>((bodySize >> 8) & 0xFF));
-
-    response.insert(response.end(), body.begin(), body.end());
+    ByteBuffer response;
+    response << std::to_underlying(AuthOpcode::CMD_REALM_LIST)
+             << static_cast<uint16_t>(body.Size())
+             << body;
 
     FL_LOG_DEBUG("AuthSession", "[{}] Sending realm list response ({} bytes, body={} bytes)",
-        _remoteAddress, response.size(), bodySize);
+        _remoteAddress, response.Size(), body.Size());
     FL_LOG_TRACE("AuthSession", "[{}] Realm list response: {}",
-        _remoteAddress, HexStr(response));
+        _remoteAddress, HexStr(response.Data()));
 
     co_await boost::asio::async_write(
-        _socket, boost::asio::buffer(response),
+        _socket, boost::asio::buffer(response.Storage()),
         boost::asio::use_awaitable);
+}
+
+// ---- Realm initialization --------------------------------------------------
+
+void AuthSession::InitRealms()
+{
+    // TODO: load realms from config / database
+    Realm r;
+    r.Name            = "Fireland";
+    r.Type            = 0;       // Normal
+    r.Locked          = 0;
+    r.Flags           = 0;
+    r.Timezone        = 1;
+    r.Id              = 1;
+    r.Characters      = 0;
+    r.Population      = 0.5f;
+    r.Port            = 8085;
+    r.LocalAddress    = boost::asio::ip::make_address("127.0.0.1");
+    r.ExternalAddress = boost::asio::ip::make_address("127.0.0.1");
+    r.LocalSubnetMask = boost::asio::ip::make_address_v4("255.255.255.0");
+
+    _realms.push_back(std::move(r));
 }
 
 // ---- Error helpers ---------------------------------------------------------
 
 async<void> AuthSession::SendChallengeError(uint8_t error)
 {
-    std::array<uint8_t, 3> response = {
-        std::to_underlying(AuthOpcode::CMD_AUTH_LOGON_CHALLENGE),
-        0x00,
-        error
-    };
+    ByteBuffer response(3);
+    response << std::to_underlying(AuthOpcode::CMD_AUTH_LOGON_CHALLENGE)
+             << uint8_t(0x00)
+             << error;
 
     co_await boost::asio::async_write(
-        _socket, boost::asio::buffer(response),
+        _socket, boost::asio::buffer(response.Storage()),
         boost::asio::use_awaitable);
 }
 

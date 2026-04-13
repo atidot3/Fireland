@@ -5,6 +5,7 @@
 set(headers_files
     AuthOpcode.h
     AuthSession.h
+    Realm.h
 )
 
 set(sources_files

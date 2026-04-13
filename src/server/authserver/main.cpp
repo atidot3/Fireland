@@ -13,6 +13,7 @@
 #include <Utils/Log.h>
 #include <Utils/ProgramOptions.h>
 #include <Utils/IoContext.h>
+#include <Network/SessionKeyStore.h>
 #include <Network/TcpListener.h>
 
 #include "AuthSession.h"
@@ -40,10 +41,12 @@ int main(int argc, char* argv[])
     {
         Fireland::Utils::IoContext ioContext(THREAD_COUNT);
 
+        Fireland::Network::SessionKeyStore sessionKeyStore(ioContext.Get());
+
         Fireland::Network::TcpListener<Fireland::Auth::AuthSession> listener(
             ioContext,
-            [](boost::asio::ip::tcp::socket socket) {
-                return std::make_shared<Fireland::Auth::AuthSession>(std::move(socket));
+            [&sessionKeyStore](boost::asio::ip::tcp::socket socket) {
+                return std::make_shared<Fireland::Auth::AuthSession>(std::move(socket), sessionKeyStore);
             }
         );
 

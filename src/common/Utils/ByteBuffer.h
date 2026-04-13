@@ -50,6 +50,55 @@ namespace Fireland::Utils
             Append(str.data(), str.size());
         }
 
+        /// Append a null-terminated C string.
+        ByteBuffer& WriteCString(std::string_view str)
+        {
+            Append(str.data(), str.size());
+            _storage.push_back(0x00);
+            return *this;
+        }
+
+        /// Append zero bytes as padding.
+        ByteBuffer& Pad(std::size_t count)
+        {
+            _storage.insert(_storage.end(), count, 0x00);
+            return *this;
+        }
+
+        // -- Stream operators --
+
+        /// Append a trivially-copyable value via <<.
+        template <typename T>
+            requires (std::is_trivially_copyable_v<T> && !std::is_pointer_v<T>)
+        ByteBuffer& operator<<(const T& value)
+        {
+            Write(value);
+            return *this;
+        }
+
+        /// Append raw bytes from a span via <<.
+        ByteBuffer& operator<<(std::span<const uint8_t> data)
+        {
+            Append(data.data(), data.size());
+            return *this;
+        }
+
+        /// Append another ByteBuffer's contents via <<.
+        ByteBuffer& operator<<(const ByteBuffer& other)
+        {
+            Append(other.RawData(), other.Size());
+            return *this;
+        }
+
+        /// Read a trivially-copyable value via >>.
+        template <typename T>
+            requires std::is_trivially_copyable_v<T>
+        ByteBuffer& operator>>(T& value)
+        {
+            value = Read<T>();
+            return *this;
+        }
+
         // -- Read API --
 
         /// Read a trivially-copyable value at the current read position.

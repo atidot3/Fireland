@@ -12,13 +12,17 @@ namespace Fireland::Auth {
 
 enum class AuthOpcode : uint8_t
 {
-    CMD_AUTH_LOGON_CHALLENGE  = 0x00,
-    CMD_AUTH_LOGON_PROOF      = 0x01,
-    CMD_REALM_LIST            = 0x10,
+    CMD_AUTH_LOGON_CHALLENGE      = 0x00,
+    CMD_AUTH_LOGON_PROOF          = 0x01,
+    CMD_AUTH_RECONNECT_CHALLENGE  = 0x02,
+    CMD_AUTH_RECONNECT_PROOF      = 0x03,
+    CMD_REALM_LIST                = 0x10,
 };
 BOOST_DESCRIBE_ENUM(AuthOpcode,
     CMD_AUTH_LOGON_CHALLENGE,
     CMD_AUTH_LOGON_PROOF,
+    CMD_AUTH_RECONNECT_CHALLENGE,
+    CMD_AUTH_RECONNECT_PROOF,
     CMD_REALM_LIST);
 
 enum class AuthResult : uint8_t
@@ -69,6 +73,15 @@ struct AuthLogonProof_C
     uint8_t crc_hash[20];
     uint8_t number_of_keys;
     uint8_t security_flags;
+};
+
+struct AuthReconnectProof_C
+{
+    uint8_t cmd;               // 0x03
+    uint8_t R1[16];            // client random
+    uint8_t R2[20];            // client proof: SHA1(username, R1, reconnect_rand, K)
+    uint8_t R3[20];            // client checksum (unused)
+    uint8_t number_of_keys;
 };
 
 #pragma pack(pop)
