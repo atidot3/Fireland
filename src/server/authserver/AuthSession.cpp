@@ -2,8 +2,12 @@
 #include "AuthOpcode.h"
 
 #include <algorithm>
+#include <array>
+#include <bit>
 #include <cctype>
+#include <ranges>
 #include <span>
+#include <utility>
 #include <vector>
 
 #include <boost/asio/read.hpp>
@@ -20,10 +24,11 @@ static constexpr const char* HARDCODED_PASSWORD = "TEST";
 
 static std::string ToUpper(std::string_view sv)
 {
-    std::string result(sv);
-    for (auto& c : result)
-        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-    return result;
+    return sv
+        | std::views::transform([](unsigned char c) -> char {
+            return static_cast<char>(std::toupper(c));
+          })
+        | std::ranges::to<std::string>();
 }
 
 static std::string HexStr(std::span<const uint8_t> data)
@@ -146,7 +151,7 @@ boost::asio::awaitable<void> AuthSession::HandleLogonChallenge()
     {
         FL_LOG_WARNING("AuthSession", "[{}] Unknown account '{}' (expected '{}')",
             _remoteAddress, _username, HARDCODED_USERNAME);
-        co_await SendChallengeError(static_cast<uint8_t>(AuthResult::FAIL_UNKNOWN_ACCOUNT));
+        co_await SendChallengeError(std::to_underlying(AuthResult::FAIL_UNKNOWN_ACCOUNT));
         co_return;
     }
 
@@ -170,9 +175,9 @@ boost::asio::awaitable<void> AuthSession::HandleLogonChallenge()
     std::vector<uint8_t> response;
     response.reserve(119);
 
-    response.push_back(static_cast<uint8_t>(AuthOpcode::CMD_AUTH_LOGON_CHALLENGE)); // cmd
-    response.push_back(0x00);                                                       // unk
-    response.push_back(static_cast<uint8_t>(AuthResult::SUCCESS));                  // error
+    response.push_back(std::to_underlying(AuthOpcode::CMD_AUTH_LOGON_CHALLENGE)); // cmd
+    response.push_back(0x00);                                                      // unk
+    response.push_back(std::to_underlying(AuthResult::SUCCESS));                    // error
 
     // B (32 bytes)
     response.insert(response.end(), B_bytes.begin(), B_bytes.end());
@@ -188,9 +193,8 @@ boost::asio::awaitable<void> AuthSession::HandleLogonChallenge()
     // salt (32 bytes)
     response.insert(response.end(), salt_bytes.begin(), salt_bytes.end());
 
-    // CRC salt (16 random bytes — not verified by client)
-    for (int i = 0; i < 16; ++i)
-        response.push_back(0);
+    // CRC salt (16 zero bytes — not verified by client)
+    response.insert(response.end(), 16, 0x00);
 
     // security_flags
     response.push_back(0x00);
@@ -227,7 +231,7 @@ boost::asio::awaitable<void> AuthSession::HandleLogonProof()
     A.SetBinary(std::span<const uint8_t>(proofBuf.data(), 32));
 
     Crypto::SHA1::Digest clientM1{};
-    std::copy_n(proofBuf.data() + 32, 20, clientM1.begin());
+    std::ranges::copy_n(proofBuf.data() + 32, 20, clientM1.begin());
 
     FL_LOG_TRACE("AuthSession", "[{}] Client A ({} bytes): {}",
         _remoteAddress, 32, HexStr(std::span<const uint8_t>(proofBuf.data(), 32)));
@@ -239,8 +243,8 @@ boost::asio::awaitable<void> AuthSession::HandleLogonProof()
         FL_LOG_WARNING("AuthSession", "[{}] Invalid logon proof (SRP6 verification failed) for '{}'", _remoteAddress, _username);
 
         std::array<uint8_t, 4> fail = {
-            static_cast<uint8_t>(AuthOpcode::CMD_AUTH_LOGON_PROOF),
-            static_cast<uint8_t>(AuthResult::FAIL_INCORRECT_PASSWORD),
+            std::to_underlying(AuthOpcode::CMD_AUTH_LOGON_PROOF),
+            std::to_underlying(AuthResult::FAIL_INCORRECT_PASSWORD),
             0x03, 0x00
         };
         co_await boost::asio::async_write(
@@ -258,27 +262,14 @@ boost::asio::awaitable<void> AuthSession::HandleLogonProof()
     std::vector<uint8_t> response;
     response.reserve(32);
 
-    response.push_back(static_cast<uint8_t>(AuthOpcode::CMD_AUTH_LOGON_PROOF)); // cmd
-    response.push_back(static_cast<uint8_t>(AuthResult::SUCCESS));              // error
+    response.push_back(std::to_underlying(AuthOpcode::CMD_AUTH_LOGON_PROOF)); // cmd
+    response.push_back(std::to_underlying(AuthResult::SUCCESS));              // error
 
     // M2 (20 bytes)
     response.insert(response.end(), M2.begin(), M2.end());
 
-    // account_flags (uint32) — 0x00800000 = Pro pass, 0 = normal
-    response.push_back(0x00);
-    response.push_back(0x00);
-    response.push_back(0x00);
-    response.push_back(0x00);
-
-    // survey_id (uint32)
-    response.push_back(0x00);
-    response.push_back(0x00);
-    response.push_back(0x00);
-    response.push_back(0x00);
-
-    // login_flags (uint16)
-    response.push_back(0x00);
-    response.push_back(0x00);
+    // account_flags (uint32) + survey_id (uint32) + login_flags (uint16)
+    response.insert(response.end(), 10, 0x00);
 
     FL_LOG_DEBUG("AuthSession", "[{}] Sending proof success response ({} bytes)", _remoteAddress, response.size());
     FL_LOG_TRACE("AuthSession", "[{}] Proof response: {}",
@@ -322,9 +313,8 @@ boost::asio::awaitable<void> AuthSession::HandleRealmList()
     realmData.push_back(0x00);
 
     // population (float, little-endian) — 0.5 = medium
-    float pop = 0.5f;
-    auto* popBytes = reinterpret_cast<const uint8_t*>(&pop);
-    realmData.insert(realmData.end(), popBytes, popBytes + 4);
+    auto popBytes = std::bit_cast<std::array<uint8_t, 4>>(0.5f);
+    realmData.insert(realmData.end(), popBytes.begin(), popBytes.end());
 
     realmData.push_back(0x00);    // characters: 0
     realmData.push_back(0x01);    // timezone: 1
@@ -348,7 +338,7 @@ boost::asio::awaitable<void> AuthSession::HandleRealmList()
 
     // Header: opcode + uint16 body size
     std::vector<uint8_t> response;
-    response.push_back(static_cast<uint8_t>(AuthOpcode::CMD_REALM_LIST));
+    response.push_back(std::to_underlying(AuthOpcode::CMD_REALM_LIST));
 
     uint16_t bodySize = static_cast<uint16_t>(body.size());
     response.push_back(static_cast<uint8_t>(bodySize & 0xFF));
@@ -371,7 +361,7 @@ boost::asio::awaitable<void> AuthSession::HandleRealmList()
 boost::asio::awaitable<void> AuthSession::SendChallengeError(uint8_t error)
 {
     std::array<uint8_t, 3> response = {
-        static_cast<uint8_t>(AuthOpcode::CMD_AUTH_LOGON_CHALLENGE),
+        std::to_underlying(AuthOpcode::CMD_AUTH_LOGON_CHALLENGE),
         0x00,
         error
     };
