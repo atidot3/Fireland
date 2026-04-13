@@ -26,8 +26,9 @@
 ### Key features
 
 - ⚡ **Coroutine-based networking** — `co_await` everywhere, no callback spaghetti
+- 🔐 **SRP6 authentication** — full challenge → proof → realm list flow (Boost.Multiprecision + Boost.UUID SHA1)
 - 🎨 **Configurable coloured logging** — per-component filtering, console + file appenders, TrinityCore-style `.conf` files
-- 🧩 **Modular architecture** — `Utils`, `Network`, `AuthServer`, `WorldServer` as separate CMake targets
+- 🧩 **Modular architecture** — `Utils`, `Crypto`, `Network`, `AuthServer`, `WorldServer` as separate CMake targets
 - 🔧 **Zero manual dependency management** — Boost is fetched automatically via CMake `FetchContent`
 - 🖥️ **Cross-platform** — Windows (MSVC), Linux (GCC/Clang), macOS (Apple Clang)
 
@@ -47,21 +48,28 @@ Fireland/
 │   └── worldserver.conf.dist   # World server config template
 └── src/
     ├── common/
+    │   ├── Crypto/             # Cryptography primitives
+    │   │   ├── BigNumber.h/cpp # boost::multiprecision::cpp_int wrapper
+    │   │   ├── SHA1.h          # SHA-1 digest (boost::uuids::detail::sha1)
+    │   │   └── SRP6.h/cpp      # SRP-6 authentication protocol
     │   ├── Utils/              # Shared utilities
     │   │   ├── Async.hpp       # awaitable<T> alias, async_sleep
-    │   │   ├── ByteBuffer.h    # Binary serialisation buffer
-    │   │   ├── IoContext.h/cpp  # Boost.Asio thread pool wrapper
+    │   │   ├── ByteBuffer.h/cpp# Binary serialisation buffer
+    │   │   ├── Describe.hpp    # Compile-time type description helpers
+    │   │   ├── IoContext.h/cpp # Boost.Asio thread pool wrapper
     │   │   ├── Log.h/cpp       # Configurable logging system
     │   │   ├── ProgramOptions.h# CLI argument parsing (--config, --quiet, --help)
     │   │   └── StringUtils.h   # Trim, split, case-convert
     │   └── Network/            # Async TCP networking library
     │       ├── IoContext.h/cpp  # Network-specific io_context
-    │       ├── TcpListener.h/cpp   # Coroutine accept loop
+    │       ├── TcpListener.h   # Coroutine accept loop (header-only, templated)
     │       ├── TcpSession.h/cpp    # Per-connection read/write coroutines
     │       ├── SessionManager.h/cpp# Thread-safe session tracking (strand-based)
     │       └── PacketBuffer.h/cpp  # WoW packet framing (opcode + payload)
     └── server/
         ├── authserver/         # Authentication server (port 3724)
+        │   ├── AuthOpcode.h    # Auth protocol opcodes & packet structures
+        │   ├── AuthSession.h/cpp # SRP6 auth flow (challenge → proof → realm list)
         │   └── main.cpp
         └── worldserver/        # World server (port 8085)
             └── main.cpp
@@ -182,6 +190,27 @@ Logger.TcpListener    = 4,Console
 ```
 
 ## Architecture highlights
+
+### SRP6 authentication
+
+The auth server implements the full SRP-6 handshake as a single coroutine per client:
+
+```cpp
+async<void> AuthSession::Run()
+{
+    auto self = shared_from_this(); // prevent premature destruction
+    while (_socket.is_open())
+    {
+        uint8_t cmd = co_await ReadOpcode();
+        switch (static_cast<AuthOpcode>(cmd))
+        {
+            case AuthOpcode::CMD_AUTH_LOGON_CHALLENGE: co_await HandleLogonChallenge(); break;
+            case AuthOpcode::CMD_AUTH_LOGON_PROOF:     co_await HandleLogonProof();     break;
+            case AuthOpcode::CMD_REALM_LIST:           co_await HandleRealmList();      break;
+        }
+    }
+}
+```
 
 ### Coroutine networking
 
