@@ -53,3 +53,4 @@ desktop.ini
 
 # --- SQL dumps (local only) ---
 sql/*.sql.local
+/Servers
