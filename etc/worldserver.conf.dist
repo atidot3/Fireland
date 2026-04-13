@@ -28,7 +28,8 @@ CharDB   = "fireland_characters"
 #          4 = Info, 5 = Debug, 6 = Trace
 #
 #      Flags (bitwise OR):
-#          0 = None, 1 = Timestamp, 2 = Log Level, 4 = Logger Name
+#          0 = None, 1 = Timestamp, 2 = Log Level, 4 = Logger Name,
+#          8 = Source Location (file:line)
 #
 #      Colors (Console only, optional): "fatal error warning info debug trace"
 #          0=BLACK  1=RED     2=GREEN    3=BROWN   4=BLUE
@@ -43,8 +44,8 @@ CharDB   = "fireland_characters"
 #
 ###################################################################################################
 
-Appender.Console = 1,5,6,"1 9 5 2 8 7"
-Appender.World   = 2,5,7,World.log,w
+Appender.Console = 1,5,15,"1 9 5 2 8 7"
+Appender.World   = 2,5,15,World.log,w
 
 Logger.root           = 4,Console
 Logger.WorldServer    = 4,Console World

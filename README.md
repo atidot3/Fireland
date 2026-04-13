@@ -161,10 +161,10 @@ The logging system is configured via `Appender.*` and `Logger.*` entries in the 
 # Appender.<name> = <Type>,<LogLevel>,<Flags>[,<Colors>|<File>,<Mode>]
 #   Type:     1 = Console, 2 = File
 #   LogLevel: 0=Disabled 1=Fatal 2=Error 3=Warning 4=Info 5=Debug 6=Trace
-#   Flags:    1=Timestamp 2=LogLevel 4=LoggerName (bitwise OR)
+#   Flags:    1=Timestamp 2=LogLevel 4=LoggerName 8=SourceLocation (bitwise OR)
 
-Appender.Console = 1,5,6,"1 9 5 2 8 7"
-Appender.Auth    = 2,5,7,Auth.log,w
+Appender.Console = 1,5,15,"1 9 5 2 8 7"
+Appender.Auth    = 2,5,15,Auth.log,w
 
 # Logger.<name> = <LogLevel>,<Appender1> [<Appender2> ...]
 Logger.root           = 4,Console

@@ -14,6 +14,7 @@
 // Config file format (inspired by TrinityCore):
 //
 //   Appender.<name> = <Type>,<LogLevel>,<Flags>[,<Colors>|<File>,<Mode>]
+//   Flags: 1=Timestamp 2=LogLevel 4=LoggerName 8=SourceLocation (bitwise OR)
 //   Logger.<name>   = <LogLevel>,<Appender1> [<Appender2> ...]
 //
 // See authserver.conf.dist / worldserver.conf.dist for full documentation.
@@ -21,6 +22,7 @@
 
 #include <cstdint>
 #include <format>
+#include <source_location>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -54,7 +56,8 @@ namespace Fireland::Utils::Log
     bool ShouldLog(std::string_view logger, Level level);
 
     /// Write a log message for a given logger and level.
-    void Write(std::string_view logger, Level level, std::string_view message);
+    void Write(std::string_view logger, Level level, std::string_view message,
+              std::source_location loc = std::source_location::current());
 
     /// Change the severity of an existing logger at runtime.
     void SetLevel(std::string_view logger, Level level);

@@ -36,12 +36,6 @@ using Fireland::Utils::Describe::to_string;
 namespace Fireland::Utils::Log {
 
 // ============================================================================
-// Constants
-// ============================================================================
-
-static constexpr int LABEL_WIDTH = 7;
-
-// ============================================================================
 // ANSI colour table (indexed 0-14, TrinityCore convention)
 // ============================================================================
 
@@ -80,10 +74,18 @@ static constexpr std::array<uint8_t, 6> DEFAULT_COLORS = { 1, 9, 5, 2, 8, 7 };
 
 enum AppenderFlags : uint8_t
 {
-    FLAG_TIMESTAMP   = 1,
-    FLAG_LOGLEVEL    = 2,
-    FLAG_LOGGERNAME  = 4,
+    FLAG_TIMESTAMP      = 1,
+    FLAG_LOGLEVEL       = 2,
+    FLAG_LOGGERNAME     = 4,
+    FLAG_SOURCELOCATION = 8,
 };
+
+static std::string_view ExtractFilename(const char* path)
+{
+    std::string_view sv(path);
+    auto pos = sv.find_last_of("/\\");
+    return (pos != std::string_view::npos) ? sv.substr(pos + 1) : sv;
+}
 
 // ============================================================================
 // Appender base class
@@ -103,7 +105,8 @@ public:
                static_cast<uint8_t>(msgLevel) <= static_cast<uint8_t>(max);
     }
 
-    virtual void Write(Level level, std::string_view logger, std::string_view message) = 0;
+    virtual void Write(Level level, std::string_view logger, std::string_view message,
+                       const std::source_location& loc) = 0;
 
     void SetMaxLevel(Level level) { _maxLevel.store(level, std::memory_order_relaxed); }
 
@@ -142,7 +145,8 @@ public:
     {
     }
 
-    void Write(Level level, std::string_view logger, std::string_view message) override
+    void Write(Level level, std::string_view logger, std::string_view message,
+               const std::source_location& loc) override
     {
         if (!Accepts(level))
             return;
@@ -155,11 +159,13 @@ public:
             oss << "\033[90m[" << Timestamp() << "] " << ANSI_RESET;
 
         if (_flags & FLAG_LOGLEVEL)
-            oss << color << "[" << std::left << std::setw(LABEL_WIDTH)
-                << to_string(level) << "] " << ANSI_RESET;
+            oss << color << "[" << to_string(level) << "] " << ANSI_RESET;
 
         if (_flags & FLAG_LOGGERNAME)
             oss << "\033[90m[" << logger << "] " << ANSI_RESET;
+
+        if (_flags & FLAG_SOURCELOCATION)
+            oss << "\033[90m[" << ExtractFilename(loc.file_name()) << ":" << loc.line() << "] " << ANSI_RESET;
 
         oss << message;
 
@@ -187,7 +193,8 @@ public:
         _file.open(filename, openMode);
     }
 
-    void Write(Level level, std::string_view logger, std::string_view message) override
+    void Write(Level level, std::string_view logger, std::string_view message,
+               const std::source_location& loc) override
     {
         if (!Accepts(level) || !_file.is_open())
             return;
@@ -198,11 +205,13 @@ public:
             oss << "[" << Timestamp() << "] ";
 
         if (_flags & FLAG_LOGLEVEL)
-            oss << "[" << std::left << std::setw(LABEL_WIDTH)
-                  << to_string(level) << "] ";
+            oss << "[" << to_string(level) << "] ";
 
         if (_flags & FLAG_LOGGERNAME)
             oss << "[" << logger << "] ";
+
+        if (_flags & FLAG_SOURCELOCATION)
+            oss << "[" << ExtractFilename(loc.file_name()) << ":" << loc.line() << "] ";
 
         oss << message << '\n';
 
@@ -394,7 +403,7 @@ static void CreateDefaults(Level defaultLevel)
 {
     s_appenders["Console"] = std::make_unique<ConsoleAppender>(
         Level::Trace,
-        static_cast<uint8_t>(FLAG_LOGLEVEL | FLAG_LOGGERNAME),
+        static_cast<uint8_t>(FLAG_LOGLEVEL | FLAG_LOGGERNAME | FLAG_SOURCELOCATION),
         DEFAULT_COLORS);
 
     LoggerConfig root;
@@ -462,13 +471,15 @@ bool ShouldLog(std::string_view logger, Level level)
            static_cast<uint8_t>(level) <= static_cast<uint8_t>(max);
 }
 
-void Write(std::string_view logger, Level level, std::string_view message)
+void Write(std::string_view logger, Level level, std::string_view message,
+           std::source_location loc)
 {
     if (!s_initialized.load(std::memory_order_acquire))
     {
-        std::cout << "[" << std::left << std::setw(LABEL_WIDTH)
-                  << to_string(level) << "] "
-                  << "[" << logger << "] " << message << std::endl;
+        std::cout << "[" << to_string(level) << "] "
+                  << "[" << logger << "] "
+                  << "[" << ExtractFilename(loc.file_name()) << ":" << loc.line() << "] "
+                  << message << std::endl;
         return;
     }
 
@@ -479,7 +490,7 @@ void Write(std::string_view logger, Level level, std::string_view message)
     {
         auto it = s_appenders.find(appName);
         if (it != s_appenders.end())
-            it->second->Write(level, logger, message);
+            it->second->Write(level, logger, message, loc);
     }
 }
 
