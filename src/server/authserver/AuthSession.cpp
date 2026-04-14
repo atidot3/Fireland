@@ -53,11 +53,7 @@ AuthSession::~AuthSession() noexcept
 void AuthSession::Start()
 {
     auto self = shared_from_this();
-    boost::asio::co_spawn(
-        _socket.get_executor(),
-        self->Run(),
-        boost::asio::detached
-    );
+    boost::asio::co_spawn(_socket.get_executor(), self->Run(), boost::asio::detached);
 }
 
 async<void> AuthSession::Run()
@@ -70,36 +66,50 @@ async<void> AuthSession::Run()
     {
         while (_socket.is_open())
         {
-            // Read the opcode byte
-            uint8_t cmd = 0;
-            co_await boost::asio::async_read(
-                _socket, boost::asio::buffer(&cmd, 1),
-                boost::asio::use_awaitable);
+            // 1. Read the first byte to get the opcode
+            AuthOpcode opcode = AuthOpcode::NONE;
+            auto readed_bytes = co_await boost::asio::async_read(_socket, boost::asio::buffer(&opcode, 1), boost::asio::use_awaitable);
+            FL_LOG_DEBUG("AuthSession", "Read packetdata for opcode {} ({} bytes)", Utils::Describe::to_string(opcode), readed_bytes);
 
-            switch (static_cast<AuthOpcode>(cmd))
+            // 2. Read the rest of the packet based on opcode
+            std::vector<uint8_t> buffer(1024);
+            readed_bytes = co_await _socket.async_read_some(boost::asio::buffer(buffer.data(), 1024), boost::asio::use_awaitable);
+            FL_LOG_DEBUG("AuthSession", "Packetdata read complete ({} bytes)", readed_bytes);
+
+            // 3. Dispatch to handler
+            AuthPacket packet(opcode, 1024);
+            packet.Append(buffer.data(), readed_bytes);
+
+            if (readed_bytes == 0)
+            {
+                FL_LOG_INFO("AuthSession", "[{}] Connection closed by peer", _remoteAddress);
+                co_return;
+            }
+
+            switch (opcode)
             {
                 case AuthOpcode::CMD_AUTH_LOGON_CHALLENGE:
-                    co_await HandleLogonChallenge();
+                    co_await HandleLogonChallenge(std::move(packet));
                     break;
 
                 case AuthOpcode::CMD_AUTH_LOGON_PROOF:
-                    co_await HandleLogonProof();
+                    co_await HandleLogonProof(std::move(packet));
                     break;
 
                 case AuthOpcode::CMD_AUTH_RECONNECT_CHALLENGE:
-                    co_await HandleReconnectChallenge();
+                    co_await HandleReconnectChallenge(std::move(packet));
                     break;
 
                 case AuthOpcode::CMD_AUTH_RECONNECT_PROOF:
-                    co_await HandleReconnectProof();
+                    co_await HandleReconnectProof(std::move(packet));
                     break;
 
                 case AuthOpcode::CMD_REALM_LIST:
-                    co_await HandleRealmList();
+                    co_await HandleRealmList(std::move(packet));
                     break;
 
                 default:
-                    FL_LOG_WARNING("AuthSession", "[{}] Unknown opcode 0x{:02x}", _remoteAddress, cmd);
+                    FL_LOG_WARNING("AuthSession", "[{}] Unknown opcode 0x{:02x}", _remoteAddress, uint8_t(opcode));
                     co_return;
             }
         }
@@ -113,54 +123,31 @@ async<void> AuthSession::Run()
             FL_LOG_ERROR("AuthSession", "[{}] Error: {}", _remoteAddress, e.what());
         }
     }
+    catch (const std::exception& e)
+    {
+        FL_LOG_ERROR("AuthSession", "[{}] Exception: {}", _remoteAddress, e.what());
+    }
 
     FL_LOG_INFO("AuthSession", "[{}] Disconnected", _remoteAddress);
 }
 
 // ---- LOGON_CHALLENGE -------------------------------------------------------
 
-async<void> AuthSession::HandleLogonChallenge()
+async<void> AuthSession::HandleLogonChallenge(AuthPacket packet)
 {
-    // Read the rest of the fixed-size header (we already consumed the cmd byte)
-    // AuthLogonChallenge_C minus the cmd byte = sizeof(AuthLogonChallenge_C) - 1
-    constexpr std::size_t HEADER_REMAINING = sizeof(AuthLogonChallenge_C) - 1;
+    AuthLogonChallenge_C auth_c(packet);
+    
+    FL_LOG_DEBUG("AuthSession", "[{}] Challenge fields: error=0x{:02X}, size={}, build={}, account_len={}", _remoteAddress, auth_c.error, auth_c.size, auth_c.build, auth_c.account_len);
 
-    std::array<uint8_t, HEADER_REMAINING> headerBuf{};
-    co_await boost::asio::async_read(
-        _socket, boost::asio::buffer(headerBuf),
-        boost::asio::use_awaitable);
-
-    FL_LOG_TRACE("AuthSession", "[{}] Challenge header ({} bytes): {}",
-        _remoteAddress, HEADER_REMAINING, StringUtils::HexStr(headerBuf));
-
-    // Parse key fields from header for logging
-    uint8_t  errorField = headerBuf[0];
-    uint16_t sizeField  = headerBuf[1] | (headerBuf[2] << 8);
-    uint16_t buildField = headerBuf[10] | (headerBuf[11] << 8);
-
-    // account_len is the last byte of the fixed header
-    uint8_t accountLen = headerBuf[HEADER_REMAINING - 1];
-
-    FL_LOG_DEBUG("AuthSession", "[{}] Challenge fields: error=0x{:02X}, size={}, build={}, account_len={}",
-        _remoteAddress, errorField, sizeField, buildField, accountLen);
-
-    // Read the account name
-    std::vector<uint8_t> accountBuf(accountLen);
-    co_await boost::asio::async_read(
-        _socket, boost::asio::buffer(accountBuf),
-        boost::asio::use_awaitable);
-
-    std::string rawAccount(accountBuf.begin(), accountBuf.end());
-    _username = StringUtils::ToUpper(rawAccount);
-    FL_LOG_INFO("AuthSession", "[{}] Logon challenge for '{}' (raw: '{}', len={})",
-        _remoteAddress, _username, rawAccount, accountLen);
+    _username = StringUtils::ToUpper(auth_c.account_name);
+    FL_LOG_INFO("AuthSession", "[{}] Logon challenge for '{}' (raw: '{}', len={})", _remoteAddress, _username, auth_c.account_name, auth_c.account_len);
 
     // Check if account exists (hardcoded)
     if (_username != HARDCODED_USERNAME)
     {
         FL_LOG_WARNING("AuthSession", "[{}] Unknown account '{}' (expected '{}')",
             _remoteAddress, _username, HARDCODED_USERNAME);
-        co_await SendChallengeError(std::to_underlying(AuthResult::FAIL_UNKNOWN_ACCOUNT));
+        co_await SendChallengeError(AuthResult::FAIL_UNKNOWN_ACCOUNT);
         co_return;
     }
 
@@ -182,9 +169,9 @@ async<void> AuthSession::HandleLogonChallenge()
         _remoteAddress, salt_bytes.size(), StringUtils::HexStr(salt_bytes));
 
     ByteBuffer response(119);
-    response << std::to_underlying(AuthOpcode::CMD_AUTH_LOGON_CHALLENGE) // cmd
-             << uint8_t(0x00)                                           // unk
-             << std::to_underlying(AuthResult::SUCCESS)                  // error
+    response << AuthOpcode::CMD_AUTH_LOGON_CHALLENGE // cmd
+             << uint8_t(0x00)                                            // unk
+             << AuthResult::SUCCESS                                      // error
              << B_bytes                                                  // B (32 bytes)
              << static_cast<uint8_t>(g_bytes.size()) << g_bytes          // g_len + g
              << static_cast<uint8_t>(N_bytes.size()) << N_bytes          // N_len + N
@@ -193,51 +180,38 @@ async<void> AuthSession::HandleLogonChallenge()
     response << uint8_t(0x00);                                           // security_flags
 
     FL_LOG_DEBUG("AuthSession", "[{}] Sending challenge response ({} bytes)", _remoteAddress, response.Size());
-    FL_LOG_TRACE("AuthSession", "[{}] Challenge response: {}",
-        _remoteAddress, StringUtils::HexStr(response.Data()));
+    FL_LOG_TRACE("AuthSession", "[{}] Challenge response: {}", _remoteAddress, StringUtils::HexStr(response.Data()));
 
-    co_await boost::asio::async_write(
-        _socket, boost::asio::buffer(response.Storage()),
-        boost::asio::use_awaitable);
-
+    co_await boost::asio::async_write(_socket, boost::asio::buffer(response.Storage()), boost::asio::use_awaitable);
     FL_LOG_DEBUG("AuthSession", "[{}] Challenge response sent, waiting for proof...", _remoteAddress);
 }
 
 // ---- LOGON_PROOF -----------------------------------------------------------
 
-async<void> AuthSession::HandleLogonProof()
+async<void> AuthSession::HandleLogonProof(AuthPacket packet)
 {
-    // Read the rest of AuthLogonProof_C (cmd byte already consumed)
-    constexpr std::size_t PROOF_REMAINING = sizeof(AuthLogonProof_C) - 1;
+    AuthLogonProof_C proof_c(packet);
 
-    std::array<uint8_t, PROOF_REMAINING> proofBuf{};
-    co_await boost::asio::async_read(
-        _socket, boost::asio::buffer(proofBuf),
-        boost::asio::use_awaitable);
-
-    FL_LOG_DEBUG("AuthSession", "[{}] Logon proof received ({} bytes)", _remoteAddress, PROOF_REMAINING);
-    FL_LOG_TRACE("AuthSession", "[{}] Proof raw: {}",
-        _remoteAddress, StringUtils::HexStr(proofBuf));
+    FL_LOG_DEBUG("AuthSession", "[{}] Logon proof received ({} bytes)", _remoteAddress, packet.Size());
+    FL_LOG_TRACE("AuthSession", "[{}] Proof raw: {}", _remoteAddress, StringUtils::HexStr(packet.Data()));
 
     // Parse A and M1
     Crypto::BigNumber A;
-    A.SetBinary(std::span<const uint8_t>(proofBuf.data(), 32));
+    A.SetBinary(proof_c.A);
 
     Crypto::SHA1::Digest clientM1{};
-    std::ranges::copy_n(proofBuf.data() + 32, 20, clientM1.begin());
+    std::ranges::copy_n(proof_c.M1.data(), 20, clientM1.begin());
 
-    FL_LOG_TRACE("AuthSession", "[{}] Client A ({} bytes): {}",
-        _remoteAddress, 32, StringUtils::HexStr(std::span{proofBuf}.first(32)));
-    FL_LOG_TRACE("AuthSession", "[{}] Client M1 (20 bytes): {}",
-        _remoteAddress, StringUtils::HexStr(clientM1));
+    FL_LOG_TRACE("AuthSession", "[{}] Client A ({} bytes): {}", _remoteAddress, 32, StringUtils::HexStr(proof_c.A));
+    FL_LOG_TRACE("AuthSession", "[{}] Client M1 (20 bytes): {}", _remoteAddress, StringUtils::HexStr(clientM1));
 
     if (!_srp.VerifyClientProof(A, clientM1))
     {
         FL_LOG_WARNING("AuthSession", "[{}] Invalid logon proof (SRP6 verification failed) for '{}'", _remoteAddress, _username);
 
         ByteBuffer fail(4);
-        fail << std::to_underlying(AuthOpcode::CMD_AUTH_LOGON_PROOF)
-             << std::to_underlying(AuthResult::FAIL_INCORRECT_PASSWORD)
+        fail << AuthOpcode::CMD_AUTH_LOGON_PROOF
+             << AuthResult::FAIL_INCORRECT_PASSWORD
              << uint8_t(0x03) << uint8_t(0x00);
         co_await boost::asio::async_write(
             _socket, boost::asio::buffer(fail.Storage()),
@@ -255,9 +229,9 @@ async<void> AuthSession::HandleLogonProof()
     auto& M2 = _srp.GetServerProof();
 
     ByteBuffer response(32);
-    response << std::to_underlying(AuthOpcode::CMD_AUTH_LOGON_PROOF) // cmd
-             << std::to_underlying(AuthResult::SUCCESS)              // error
-             << M2;                                                  // M2 (20 bytes)
+    response << AuthOpcode::CMD_AUTH_LOGON_PROOF // cmd
+             << AuthResult::SUCCESS              // error
+             << M2;                              // M2 (20 bytes)
     response.Pad(10); // account_flags (uint32) + survey_id (uint32) + login_flags (uint16)
 
     FL_LOG_DEBUG("AuthSession", "[{}] Sending proof success response ({} bytes)", _remoteAddress, response.Size());
@@ -273,7 +247,7 @@ async<void> AuthSession::HandleLogonProof()
 
 // ---- RECONNECT_CHALLENGE ---------------------------------------------------
 
-async<void> AuthSession::HandleReconnectChallenge()
+async<void> AuthSession::HandleReconnectChallenge(AuthPacket packet)
 {
     // Same header format as logon challenge (minus the cmd byte we already consumed)
     constexpr std::size_t HEADER_REMAINING = sizeof(AuthLogonChallenge_C) - 1;
@@ -305,8 +279,8 @@ async<void> AuthSession::HandleReconnectChallenge()
             _remoteAddress, _username);
 
         ByteBuffer fail(3);
-        fail << std::to_underlying(AuthOpcode::CMD_AUTH_RECONNECT_CHALLENGE)
-             << std::to_underlying(AuthResult::FAIL_UNKNOWN_ACCOUNT);
+        fail << AuthOpcode::CMD_AUTH_RECONNECT_CHALLENGE
+             << AuthResult::FAIL_UNKNOWN_ACCOUNT;
         co_await boost::asio::async_write(
             _socket, boost::asio::buffer(fail.Storage()),
             boost::asio::use_awaitable);
@@ -326,8 +300,8 @@ async<void> AuthSession::HandleReconnectChallenge()
 
     // Response: cmd(1) + error(1) + reconnect_rand(16) + zeros(16)
     ByteBuffer response(34);
-    response << std::to_underlying(AuthOpcode::CMD_AUTH_RECONNECT_CHALLENGE)
-             << std::to_underlying(AuthResult::SUCCESS);
+    response << AuthOpcode::CMD_AUTH_RECONNECT_CHALLENGE
+             << AuthResult::SUCCESS;
     response.Append(_reconnectRand.data(), _reconnectRand.size());
     response.Pad(16);  // 16 zero bytes
 
@@ -340,7 +314,7 @@ async<void> AuthSession::HandleReconnectChallenge()
 
 // ---- RECONNECT_PROOF -------------------------------------------------------
 
-async<void> AuthSession::HandleReconnectProof()
+async<void> AuthSession::HandleReconnectProof(AuthPacket packet)
 {
     // Read the rest of AuthReconnectProof_C (cmd already consumed)
     constexpr std::size_t PROOF_REMAINING = sizeof(AuthReconnectProof_C) - 1;
@@ -367,8 +341,8 @@ async<void> AuthSession::HandleReconnectProof()
             _remoteAddress, _username);
 
         ByteBuffer fail(2);
-        fail << std::to_underlying(AuthOpcode::CMD_AUTH_RECONNECT_PROOF)
-             << std::to_underlying(AuthResult::FAIL_UNKNOWN_ACCOUNT);
+        fail << AuthOpcode::CMD_AUTH_RECONNECT_PROOF
+             << AuthResult::FAIL_UNKNOWN_ACCOUNT;
         co_await boost::asio::async_write(
             _socket, boost::asio::buffer(fail.Storage()),
             boost::asio::use_awaitable);
@@ -389,8 +363,8 @@ async<void> AuthSession::HandleReconnectProof()
             _remoteAddress, _username);
 
         ByteBuffer fail(2);
-        fail << std::to_underlying(AuthOpcode::CMD_AUTH_RECONNECT_PROOF)
-             << std::to_underlying(AuthResult::FAIL_INCORRECT_PASSWORD);
+        fail << AuthOpcode::CMD_AUTH_RECONNECT_PROOF
+             << AuthResult::FAIL_INCORRECT_PASSWORD;
         co_await boost::asio::async_write(
             _socket, boost::asio::buffer(fail.Storage()),
             boost::asio::use_awaitable);
@@ -402,8 +376,8 @@ async<void> AuthSession::HandleReconnectProof()
 
     // Response: cmd(1) + error(1) + padding(2)
     ByteBuffer response(4);
-    response << std::to_underlying(AuthOpcode::CMD_AUTH_RECONNECT_PROOF)
-             << std::to_underlying(AuthResult::SUCCESS);
+    response << AuthOpcode::CMD_AUTH_RECONNECT_PROOF
+             << AuthResult::SUCCESS;
     response.Pad(2);
 
     co_await boost::asio::async_write(
@@ -415,14 +389,8 @@ async<void> AuthSession::HandleReconnectProof()
 
 // ---- REALM_LIST ------------------------------------------------------------
 
-async<void> AuthSession::HandleRealmList()
+async<void> AuthSession::HandleRealmList(AuthPacket packet)
 {
-    // Read 4-byte padding (cmd already consumed)
-    std::array<uint8_t, 4> padding{};
-    co_await boost::asio::async_read(
-        _socket, boost::asio::buffer(padding),
-        boost::asio::use_awaitable);
-
     FL_LOG_DEBUG("AuthSession", "[{}] Realm list requested", _remoteAddress);
 
     // Resolve the client IP (without port) for address selection
@@ -461,7 +429,7 @@ async<void> AuthSession::HandleRealmList()
 
     // Header: opcode + uint16 body size
     ByteBuffer response;
-    response << std::to_underlying(AuthOpcode::CMD_REALM_LIST)
+    response << AuthOpcode::CMD_REALM_LIST
              << static_cast<uint16_t>(body.Size())
              << body;
 
@@ -499,10 +467,10 @@ void AuthSession::InitRealms()
 
 // ---- Error helpers ---------------------------------------------------------
 
-async<void> AuthSession::SendChallengeError(uint8_t error)
+async<void> AuthSession::SendChallengeError(AuthResult error)
 {
     ByteBuffer response(3);
-    response << std::to_underlying(AuthOpcode::CMD_AUTH_LOGON_CHALLENGE)
+    response << AuthOpcode::CMD_AUTH_LOGON_CHALLENGE
              << uint8_t(0x00)
              << error;
 

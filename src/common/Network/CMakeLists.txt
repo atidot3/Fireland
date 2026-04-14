@@ -5,7 +5,6 @@
 # ============================================================================
 
 set(headers_files
-  IoContext.h
   PacketBuffer.h
   SessionKeyStore.h
   SessionManager.h
@@ -14,7 +13,6 @@ set(headers_files
 )
 
 set(sources_files
-  IoContext.cpp
   PacketBuffer.cpp
   SessionKeyStore.cpp
   SessionManager.cpp

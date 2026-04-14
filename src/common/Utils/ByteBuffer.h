@@ -14,10 +14,11 @@
 #include <string>
 #include <type_traits>
 #include <vector>
+#include <format>
 
 namespace Fireland::Utils
 {
-    class ByteBuffer final
+    class ByteBuffer
     {
     public:
         ByteBuffer() = default;
@@ -130,6 +131,15 @@ namespace Fireland::Utils
             return str;
         }
 
+        /// Read a length-prefixed string with a specified length.
+        std::string ReadString(std::size_t len)
+        {
+            EnsureReadable(len);
+            std::string str(reinterpret_cast<const char*>(_storage.data() + _readPos), len);
+            _readPos += len;
+            return str;
+        }
+
         /// Read raw bytes into a destination buffer.
         void ReadBytes(void* dest, std::size_t len)
         {
@@ -158,7 +168,10 @@ namespace Fireland::Utils
         void EnsureReadable(std::size_t len) const
         {
             if (_readPos + len > _storage.size())
-                throw std::out_of_range("ByteBuffer: read past end");
+            {
+                auto err = std::format("ByteBuffer: attempt to read {} bytes with only {} bytes remaining", len, Remaining());
+                throw std::out_of_range(err);
+            }
         }
 
         std::vector<uint8_t> _storage;

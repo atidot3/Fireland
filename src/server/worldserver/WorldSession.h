@@ -18,57 +18,59 @@
 #include <boost/asio/ip/tcp.hpp>
 
 #include <Crypto/SHA1.h>
+#include <Crypto/WorldCrypt.h>
 #include <Network/SessionKeyStore.h>
 #include <Utils/Async.hpp>
 #include <Utils/ByteBuffer.h>
 
 #include "WorldOpcode.h"
+#include "WorldPacket.h"
 
-namespace Fireland::World {
-
-class WorldSession : public std::enable_shared_from_this<WorldSession>
+namespace Fireland::World
 {
-public:
-    explicit WorldSession(boost::asio::ip::tcp::socket socket,
-                          Network::SessionKeyStore& keyStore) noexcept;
-    ~WorldSession() noexcept;
+    class WorldSession : public std::enable_shared_from_this<WorldSession>
+    {
+    public:
+        explicit WorldSession(boost::asio::ip::tcp::socket socket,
+                              Network::SessionKeyStore& keyStore) noexcept;
+        ~WorldSession() noexcept;
 
-    void Start();
+        void Start();
 
-private:
-    Utils::Async::async<void> Run();
+    private:
+        Utils::Async::async<void> Run();
 
-    // ---- Connection initialization (Cata 4.3.4) ----
-    Utils::Async::async<void> SendConnectionInit();
-    Utils::Async::async<void> ReadConnectionInit();
+        // ---- Connection initialization (Cata 4.3.4) ----
+        Utils::Async::async<void> SendConnectionInit();
+        Utils::Async::async<void> ReadConnectionInit();
 
-    // ---- Auth handshake ----
-    Utils::Async::async<void> SendAuthChallenge();
-    Utils::Async::async<void> HandleAuthSession();
-    Utils::Async::async<void> SendAuthResponse(AuthResponseResult result);
+        // ---- Auth handshake ----
+        Utils::Async::async<void> SendAuthChallenge();
+        Utils::Async::async<void> HandleAuthSession();
+        Utils::Async::async<void> SendAuthResponse(AuthResponseResult result);
 
-    // ---- Packet loop (post-auth) ----
-    Utils::Async::async<void> PacketLoop();
+        // ---- Packet loop (post-auth) ----
+        Utils::Async::async<void> PacketLoop();
 
-    // ---- Helpers ----
-    /// Write a server→client packet header: [uint16 size (BE)][uint16 opcode (LE)]
-    static void WriteServerHeader(Utils::ByteBuffer& buf, uint16_t opcode, uint16_t payloadSize);
+        // ---- Send / receive helpers ----
 
-    /// Read a client→server packet header: [uint16 size (BE)][uint32 opcode (LE)]
-    struct ClientHeader { uint16_t size; uint32_t opcode; };
-    Utils::Async::async<ClientHeader> ReadClientHeader();
+        /// Read a complete CMSG (header + payload) from the socket.
+        /// Decrypts the header in-place; payload is appended to the returned packet.
+        Utils::Async::async<WorldPacket> ReadClientPacket();
 
-    boost::asio::ip::tcp::socket     _socket;
-    Network::SessionKeyStore&        _keyStore;
-    std::string                      _remoteAddress;
+        /// Serialise, encrypt the SMSG header, and write the packet to the socket.
+        Utils::Async::async<void> SendPacket(const WorldPacket& packet);
 
-    std::string  _username;
-    uint32_t     _serverSeed = 0;
-    bool         _authenticated = false;
+        boost::asio::ip::tcp::socket     _socket;
+        Network::SessionKeyStore&        _keyStore;
+        std::string                      _remoteAddress;
 
-    // Encryption seeds (used for ARC4 init after auth — TODO: implement encryption)
-    std::array<uint8_t, 16> _encryptSeed{};
-    std::array<uint8_t, 16> _decryptSeed{};
-};
+        std::string  _username;
+        uint32_t     _serverSeed = 0;
+        bool         _authenticated = false;
 
+        Crypto::WorldCrypt _crypt;
+        std::array<uint8_t, 16> _encryptSeed{};
+        std::array<uint8_t, 16> _decryptSeed{};
+    };
 } // namespace Fireland::World

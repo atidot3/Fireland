@@ -6,9 +6,12 @@
 # ============================================================================
 
 set(headers_files
+    ARC4.h
     BigNumber.h
+    HMAC.h
     SHA1.h
     SRP6.h
+    WorldCrypt.h
 )
 
 set(sources_files

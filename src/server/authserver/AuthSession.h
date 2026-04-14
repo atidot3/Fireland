@@ -19,6 +19,7 @@
 #include <Network/SessionKeyStore.h>
 #include <Utils/Async.hpp>
 
+#include "AuthPacket.hpp"
 #include "Realm.h"
 
 namespace Fireland::Auth {
@@ -33,16 +34,16 @@ public:
 
 private:
     Utils::Async::async<void> Run();
-    Utils::Async::async<void> HandleLogonChallenge();
-    Utils::Async::async<void> HandleLogonProof();
-    Utils::Async::async<void> HandleReconnectChallenge();
-    Utils::Async::async<void> HandleReconnectProof();
-    Utils::Async::async<void> HandleRealmList();
-    Utils::Async::async<void> SendChallengeError(uint8_t error);
+    Utils::Async::async<void> HandleLogonChallenge(AuthPacket packet);
+    Utils::Async::async<void> HandleLogonProof(AuthPacket packet);
+    Utils::Async::async<void> HandleReconnectChallenge(AuthPacket packet);
+    Utils::Async::async<void> HandleReconnectProof(AuthPacket packet);
+    Utils::Async::async<void> HandleRealmList(AuthPacket packet);
+    Utils::Async::async<void> SendChallengeError(AuthResult error);
 
     boost::asio::ip::tcp::socket     _socket;
-    Network::SessionKeyStore&         _keyStore;
-    std::string                       _remoteAddress;
+    Network::SessionKeyStore&        _keyStore;
+    std::string                      _remoteAddress;
 
     Crypto::SRP6 _srp;
     std::string  _username;

@@ -35,8 +35,7 @@ namespace Fireland::Network
         using SessionFactory = std::move_only_function<std::shared_ptr<SessionType>(boost::asio::ip::tcp::socket)>;
 
         TcpListener(Utils::IoContext& ioContext, SessionFactory factory)
-            : _ioContext(ioContext)
-            , _factory(std::move(factory))
+            : _factory(std::move(factory))
             , _acceptor(ioContext.Get())
         {
         }
@@ -53,10 +52,7 @@ namespace Fireland::Network
 
             FL_LOG_INFO("TcpListener", "Listening on {}:{}", address, port);
 
-            boost::asio::co_spawn(
-                _acceptor.get_executor(),
-                AcceptLoop(),
-                boost::asio::detached);
+            boost::asio::co_spawn(_acceptor.get_executor(), AcceptLoop(), boost::asio::detached);
         }
 
         void Stop()
@@ -91,7 +87,6 @@ namespace Fireland::Network
             }
         }
 
-        Utils::IoContext&              _ioContext;
         SessionFactory                 _factory;
         boost::asio::ip::tcp::acceptor _acceptor;
     };

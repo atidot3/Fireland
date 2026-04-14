@@ -4,6 +4,7 @@
 
 set(headers_files
     AuthOpcode.h
+    AuthPacket.hpp
     AuthSession.h
     Realm.h
 )
