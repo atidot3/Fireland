@@ -23,6 +23,7 @@ target_link_libraries(worldserver
     fireland_compiler_options
     fireland_crypto
     fireland_network
+    fireland_database
 )
 
 set_target_properties(worldserver PROPERTIES FOLDER "Server")

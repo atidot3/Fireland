@@ -25,18 +25,7 @@ set(CMAKE_CXX_EXTENSIONS        OFF)
 # ----------------------------------------------------------------------------
 set(FIRELAND_BOOST_VERSION "1.90.0")
 set(FIRELAND_BOOST_COMPONENTS
-  asio
-  system
-  regex
-  log
-  date_time
-  test
-  coroutine
-  program_options
-  url
-  charconv
-  multiprecision
-  uuid
+  asio system regex log date_time test coroutine program_options url charconv multiprecision uuid mysql
 )
 
 # ----------------------------------------------------------------------------

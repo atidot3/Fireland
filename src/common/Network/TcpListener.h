@@ -40,7 +40,7 @@ namespace Fireland::Network
         {
         }
 
-        void Listen(const std::string& address, uint16_t port)
+        Utils::Async::async<void> Listen(const std::string& address, uint16_t port)
         {
             boost::asio::ip::tcp::endpoint endpoint(
                 boost::asio::ip::make_address(address), port);
@@ -52,7 +52,7 @@ namespace Fireland::Network
 
             FL_LOG_INFO("TcpListener", "Listening on {}:{}", address, port);
 
-            boost::asio::co_spawn(_acceptor.get_executor(), AcceptLoop(), boost::asio::detached);
+            return AcceptLoop();
         }
 
         void Stop()

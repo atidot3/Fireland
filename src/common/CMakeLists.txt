@@ -6,6 +6,7 @@
 add_subdirectory(Utils)
 add_subdirectory(Crypto)
 add_subdirectory(Network)
+add_subdirectory(Database)
 
 # Smoke-test executable
 add_executable(fireland_smoke_test
