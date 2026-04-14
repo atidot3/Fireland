@@ -69,8 +69,10 @@ namespace Fireland::World
         uint32_t     _serverSeed = 0;
         bool         _authenticated = false;
 
+        // Per-session random seeds sent in SMSG_AUTH_CHALLENGE DosChallenge.
+        // Stored here so WorldCrypt::Init() can use them after auth succeeds.
+        std::array<uint8_t, 16> _encryptSeed{};  // DosChallenge bytes  0-15
+        std::array<uint8_t, 16> _decryptSeed{};  // DosChallenge bytes 16-31
         Crypto::WorldCrypt _crypt;
-        std::array<uint8_t, 16> _encryptSeed{};
-        std::array<uint8_t, 16> _decryptSeed{};
     };
 } // namespace Fireland::World

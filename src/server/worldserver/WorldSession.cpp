@@ -119,82 +119,149 @@ async<void> WorldSession::ReadConnectionInit()
 
 async<void> WorldSession::SendAuthChallenge()
 {
-    // Generate random server seed
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<uint32_t> seedDist;
-    _serverSeed = seedDist(gen);
+    std::mt19937 rng{std::random_device{}()};
+    _serverSeed = std::uniform_int_distribution<uint32_t>{}(rng);
 
-    // Generate encryption seeds (for future ARC4 init)
-    /*std::uniform_int_distribution<unsigned> byteDist(0, 255);
-    for (auto& b : _encryptSeed) b = static_cast<uint8_t>(byteDist(gen));
-    for (auto& b : _decryptSeed) b = static_cast<uint8_t>(byteDist(gen));*/
+    // Generate per-session random seeds (Cata 4.x: these are both the DosChallenge
+    // bytes AND the HMAC keys used later to derive the per-session ARC4 keys).
+    std::uniform_int_distribution<unsigned> byteDist(0, 255);
+    for (auto& b : _encryptSeed) b = static_cast<uint8_t>(byteDist(rng));
+    for (auto& b : _decryptSeed) b = static_cast<uint8_t>(byteDist(rng));
 
-    // Payload: uint32(1) + uint32(serverSeed) + encryptSeed(16) + decryptSeed(16)
-    /*challenge << uint32_t(1) << _serverSeed;
-    challenge.Append(_encryptSeed.data(), _encryptSeed.size());
-    challenge.Append(_decryptSeed.data(), _decryptSeed.size());*/
+    // Payload layout (37 bytes):
+    //   uint8[16]  encryptSeed   — DosChallenge bytes  0-15 (random)
+    //   uint8[16]  decryptSeed   — DosChallenge bytes 16-31 (random)
+    //   uint32     serverSeed    — used by client to compute CMSG_AUTH_SESSION digest
+    //   uint8      DosZeroBits   — leading-zero PoW requirement (1 = minimal)
+    WorldPacket packet(SMSG_AUTH_CHALLENGE, 37);
+    packet.Append(_encryptSeed.data(), _encryptSeed.size());
+    packet.Append(_decryptSeed.data(), _decryptSeed.size());
+    packet << _serverSeed;
+    packet << uint8_t(1);
 
-    ByteBuffer challenge;
+    FL_LOG_DEBUG("WorldSession", "[{}] Sending SMSG_AUTH_CHALLENGE (seed=0x{:08X})",
+        _remoteAddress, _serverSeed);
 
-    auto sz = static_cast<uint16_t>(4 + 4 + 2 + 16 + 16); // payload size: uint32(serverSeed) + encryptSeed(16) + decryptSeed(16)
-    auto op = static_cast<uint16_t>(SMSG_AUTH_CHALLENGE);
-
-    challenge << static_cast<uint8_t>(sz >> 8)  // size  high byte (BE)
-            << static_cast<uint8_t>(sz & 0xFF)  // size  low  byte (BE)
-            << static_cast<uint8_t>(op & 0xFF)  // opcode low  byte (LE)
-            << static_cast<uint8_t>(op >> 8);   // opcode high byte (LE)
-
-    challenge.Append(Crypto::WorldCrypt::kEncryptSeed.data(), Crypto::WorldCrypt::kEncryptSeed.size());
-    challenge.Append(Crypto::WorldCrypt::kDecryptSeed.data(), Crypto::WorldCrypt::kDecryptSeed.size());
-    challenge << _serverSeed << uint8_t(1);
-
-    FL_LOG_DEBUG("WorldSession", "[{}] Sending SMSG_AUTH_CHALLENGE (seed=0x{:08X}, {} bytes)", _remoteAddress, _serverSeed, challenge.Size());
-
-    co_await boost::asio::async_write(_socket, boost::asio::buffer(challenge.Storage()), boost::asio::use_awaitable);
+    co_await SendPacket(packet);
 }
 
 // ---- CMSG_AUTH_SESSION ------------------------------------------------------
-#include <boost/endian/arithmetic.hpp>
-typedef struct AUTH_LOGON_CHALLENGE_C
-{
-    uint8_t   cmd;
-    uint8_t   error;
-    boost::endian::little_uint16_t size;
-    boost::endian::little_uint32_t gamename;
-    uint8_t   version1;
-    uint8_t   version2;
-    uint8_t   version3;
-    boost::endian::little_uint16_t build;
-    boost::endian::little_uint32_t platform;
-    boost::endian::little_uint32_t os;
-    boost::endian::little_uint32_t country;
-    boost::endian::little_uint32_t timezone_bias;
-    boost::endian::little_uint32_t ip;
-    uint8_t   I_len;
-    char    I[1];
-} sAuthLogonChallenge_C;
-static_assert(sizeof(sAuthLogonChallenge_C) == (1 + 1 + 2 + 4 + 1 + 1 + 1 + 2 + 4 + 4 + 4 + 4 + 4 + 1 + 1));
+
 async<void> WorldSession::HandleAuthSession()
 {
-    // CMSG_AUTH_SESSION is the first encrypted packet from the client.
     auto packet = co_await ReadClientPacket();
 
-    constexpr static auto AUTH_LOGON_CHALLENGE_INITIAL_SIZE = 4;
-    const sAuthLogonChallenge_C* challenge = reinterpret_cast<const sAuthLogonChallenge_C*>(packet.Data().data());
-    if (challenge->size - (sizeof(sAuthLogonChallenge_C) - AUTH_LOGON_CHALLENGE_INITIAL_SIZE - 1) != challenge->I_len)
-        co_return;
-
-    FL_LOG_DEBUG("WorldSession", "[{}] Received {} (payload={} bytes)", _remoteAddress, packet.opcodeName(), packet.Size());
+    FL_LOG_DEBUG("WorldSession", "[{}] Received {} (payload={} bytes)",
+        _remoteAddress, packet.opcodeName(), packet.Size());
+    FL_LOG_TRACE("WorldSession", "[{}] Raw payload: {}",
+        _remoteAddress, StringUtils::HexStr(packet.Data()));
 
     if (!packet.is(CMSG_AUTH_SESSION))
     {
-        FL_LOG_WARNING("WorldSession", "[{}] Expected CMSG_AUTH_SESSION (0x{:04X}), got {}", _remoteAddress, CMSG_AUTH_SESSION, packet.opcodeName());
+        FL_LOG_WARNING("WorldSession",
+            "[{}] Expected CMSG_AUTH_SESSION (0x{:04X}), got {}",
+            _remoteAddress, CMSG_AUTH_SESSION, packet.opcodeName());
         co_return;
     }
 
-    FL_LOG_DEBUG("WorldSession", "[{}] CMSG_AUTH_SESSION payload ({} bytes)", _remoteAddress, packet.Size());
-    FL_LOG_TRACE("WorldSession", "[{}] Raw payload: {}", _remoteAddress, StringUtils::HexStr(packet.Data()));
+    // ---- Cata 4.3.4 bit-packed CMSG_AUTH_SESSION parsing -------------------
+    // Bits are stored MSB-first within each byte. After the bit block the
+    // reader is flushed to the next byte boundary before sequential reads.
+
+    uint8_t bitByte = 0;
+    int32_t bitPos  = -1;   // -1 means "load next byte on first access"
+
+    auto readBit = [&]() -> bool {
+        if (bitPos < 0) {
+            bitByte = packet.Read<uint8_t>();
+            bitPos  = 7;
+        }
+        return (bitByte >> bitPos--) & 1;
+    };
+    auto readBits = [&](uint32_t n) -> uint32_t {
+        uint32_t result = 0;
+        for (uint32_t i = n; i-- > 0;)
+            result |= (readBit() ? 1u : 0u) << i;
+        return result;
+    };
+
+    // Bit fields
+    uint32_t nameLen      = readBits(12);
+    bool     useIPv6      = readBit();
+    bool     hasAddonData = readBit();
+    bitPos = -1;    // flush remaining bits of the current byte
+
+    // Byte-aligned sequential fields
+    std::array<uint8_t, 4> localChallenge{};
+    packet.ReadBytes(localChallenge.data(), 4);
+
+    std::array<uint8_t, 20> digest{};
+    for (uint8_t idx : DIGEST_ORDER)
+        packet >> digest[idx];
+
+    uint64_t dosResponse{};
+    packet >> dosResponse;
+
+    uint32_t realmId{}, loginServerId{};
+    packet >> realmId >> loginServerId;
+
+    uint16_t build{};
+    packet >> build;
+
+    // Account name: nameLen bytes, no null terminator
+    std::string account = packet.ReadString(nameLen);
+
+    _username = StringUtils::ToUpper(account);
+
+    FL_LOG_INFO("WorldSession",
+        "[{}] Auth session for '{}' (build={}, realm={}, loginServer={}, useIPv6={})",
+        _remoteAddress, _username, build, realmId, loginServerId, useIPv6);
+    FL_LOG_TRACE("WorldSession", "[{}] localChallenge: {}",
+        _remoteAddress, StringUtils::HexStr(std::span<const uint8_t>(localChallenge)));
+    FL_LOG_TRACE("WorldSession", "[{}] Client digest: {}",
+        _remoteAddress, StringUtils::HexStr(std::span<const uint8_t>(digest)));
+
+    auto storedKey = co_await _keyStore.Lookup(_username);
+    if (!storedKey)
+    {
+        FL_LOG_WARNING("WorldSession",
+            "[{}] No session key for '{}' — ensure authserver stored the key",
+            _remoteAddress, _username);
+        co_await SendAuthResponse(AuthResponseResult::AUTH_UNKNOWN_ACCOUNT);
+        co_return;
+    }
+
+    // Verify: SHA1(account, loginServerId[4], localChallenge[4], serverSeed[4], K)
+    Crypto::SHA1 sha;
+    sha.Update(std::string_view(_username));
+    sha.Update(std::span<const uint8_t>(
+        reinterpret_cast<const uint8_t*>(&loginServerId), 4));
+    sha.Update(std::span<const uint8_t>(localChallenge.data(), 4));
+    sha.Update(std::span<const uint8_t>(
+        reinterpret_cast<const uint8_t*>(&_serverSeed), 4));
+    sha.Update(std::span<const uint8_t>(*storedKey));
+
+    auto expected = sha.Finalize();
+    FL_LOG_TRACE("WorldSession", "[{}] Expected digest: {}",
+        _remoteAddress, StringUtils::HexStr(std::span<const uint8_t>(expected)));
+
+    if (digest != expected)
+    {
+        FL_LOG_WARNING("WorldSession", "[{}] Auth digest mismatch for '{}'",
+            _remoteAddress, _username);
+        co_await SendAuthResponse(AuthResponseResult::AUTH_INCORRECT_PASSWORD);
+        co_return;
+    }
+
+    FL_LOG_INFO("WorldSession", "[{}] '{}' authenticated successfully",
+        _remoteAddress, _username);
+    _authenticated = true;
+
+    // Init ARC4 with the per-session seeds sent in SMSG_AUTH_CHALLENGE.
+    _crypt.Init(std::span<const uint8_t>(*storedKey),
+                std::span<const uint8_t>(_encryptSeed),
+                std::span<const uint8_t>(_decryptSeed));
+    FL_LOG_DEBUG("WorldSession", "[{}] ARC4 encryption initialised", _remoteAddress);
 
     co_await SendAuthResponse(AuthResponseResult::AUTH_OK);
 }

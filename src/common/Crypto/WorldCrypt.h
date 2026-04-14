@@ -27,27 +27,22 @@ namespace Fireland::Crypto {
 class WorldCrypt
 {
 public:
-    // Per-direction HMAC seeds (Cataclysm 4.x, build 15595).
-    // These are fixed constants hardcoded in both the server and the WoW client
-    // binary. They are used ONLY as HMAC keys to derive the per-session ARC4
-    // cipher keys: encKey = HMAC_SHA1(K, kEncryptSeed), and similarly for dec.
-    // They are NOT sent over the wire; the client already knows them.
-    static constexpr std::array<uint8_t, 16> kEncryptSeed = {
-        0x08, 0xF6, 0x61, 0xC1, 0xCA, 0x4C, 0x41, 0xE0,
-        0xF2, 0x01, 0x99, 0xFF, 0x02, 0x15, 0x7A, 0x00,
-    };
-    static constexpr std::array<uint8_t, 16> kDecryptSeed = {
-        0x40, 0xAD, 0x9C, 0xE3, 0x44, 0x2A, 0x9C, 0x0F,
-        0x9F, 0xBE, 0x31, 0xB2, 0xAD, 0x93, 0x9B, 0x61,
-    };
-
-    /// Initialise both cipher streams from the 40-byte SRP6 session key.
-    /// Must be called once after CMSG_AUTH_SESSION is verified.
-    void Init(std::span<const uint8_t> sessionKey)
+    /// Initialise both cipher streams from the SRP6 session key and the
+    /// per-session random seeds that were sent in SMSG_AUTH_CHALLENGE.
+    ///
+    /// In Cataclysm 4.x, the two 16-byte halves of the DosChallenge field
+    /// serve as HMAC keys:
+    ///   encKey = HMAC-SHA1(K, encryptSeed)   — used for outgoing SMSG headers
+    ///   decKey = HMAC-SHA1(K, decryptSeed)   — used for incoming CMSG headers
+    ///
+    /// The client derives the same keys because it received the seeds in the
+    /// challenge packet. Must be called once after CMSG_AUTH_SESSION is verified.
+    void Init(std::span<const uint8_t> sessionKey,
+              std::span<const uint8_t> encryptSeed,
+              std::span<const uint8_t> decryptSeed)
     {
-        // Derive a 20-byte ARC4 key for each direction
-        SHA1::Digest encKey = HMAC_SHA1(sessionKey, std::span<const uint8_t>(kEncryptSeed));
-        SHA1::Digest decKey = HMAC_SHA1(sessionKey, std::span<const uint8_t>(kDecryptSeed));
+        SHA1::Digest encKey = HMAC_SHA1(sessionKey, encryptSeed);
+        SHA1::Digest decKey = HMAC_SHA1(sessionKey, decryptSeed);
 
         _encrypt.Init(std::span<const uint8_t>(encKey));
         _decrypt.Init(std::span<const uint8_t>(decKey));
