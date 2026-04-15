@@ -24,6 +24,8 @@ namespace Fireland::Utils
         ByteBuffer() = default;
         explicit ByteBuffer(std::size_t reserveSize) { _storage.reserve(reserveSize); }
         explicit ByteBuffer(std::vector<uint8_t> data) : _storage(std::move(data)) {}
+        uint8_t& operator[](std::size_t index) { return _storage[index]; }
+        const uint8_t& operator[](std::size_t index) const { return _storage[index]; }
 
         // -- Write API --
 
@@ -148,8 +150,20 @@ namespace Fireland::Utils
             _readPos += len;
         }
 
-        // -- Accessors --
+        // -- Bit read API (MSB-first within each byte, Cata 4.x wire format)
+        /// Read one bit from the current byte, loading a new byte when needed.
+        /// Bits are consumed from MSB (bit 7) down to LSB (bit 0).
+        bool ReadBit() { if (_bitPos < 0) { _bitByte = Read<uint8_t>(); _bitPos = 7; } return (_bitByte >> _bitPos--) & 1; }
+        
+        /// Read n bits (MSB first) and return them packed in the low n bits of a uint32_t.
+        uint32_t ReadBits(uint32_t n) { uint32_t result = 0; for (uint32_t i = n; i-- > 0;) result |= (ReadBit() ? 1u : 0u) << i; return result; }
+        /// Discard the remaining bits of the current read byte (byte-align the reader).
+        void ResetReadBits() noexcept { _bitPos = -1; }
+        /// Commit any pending write bits to storage (zero-padding to a full byte) /// and reset the read bit state. Must be called before any byte-aligned
+        /// write after WriteBit/WriteBits.
+        void FlushBits() noexcept { _bitPos = 8; }
 
+        // -- Accessors --
         std::span<const uint8_t> Data() const noexcept { return _storage; }
         const uint8_t*           RawData() const noexcept { return _storage.data(); }
         std::size_t              Size() const noexcept { return _storage.size(); }
@@ -159,6 +173,13 @@ namespace Fireland::Utils
 
         void ResetReadPos() noexcept { _readPos = 0; }
         void Clear() noexcept { _storage.clear(); _readPos = 0; }
+
+        /// Advance read position by len bytes without copying data.
+        void Skip(std::size_t len)
+        {
+            EnsureReadable(len);
+            _readPos += len;
+        }
 
         /// Access the underlying vector (for direct manipulation / move).
         std::vector<uint8_t>&       Storage() noexcept { return _storage; }
@@ -176,5 +197,8 @@ namespace Fireland::Utils
 
         std::vector<uint8_t> _storage;
         std::size_t          _readPos = 0;
+        // Bit-read state
+        uint8_t _bitByte = 0;
+        int32_t _bitPos = -1; // -1 = need new byte
     };
 } // namespace Fireland::Utils

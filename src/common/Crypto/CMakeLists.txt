@@ -6,17 +6,17 @@
 # ============================================================================
 
 set(headers_files
-    ARC4.h
-    BigNumber.h
-    HMAC.h
-    SHA1.h
-    SRP6.h
-    WorldCrypt.h
+    include/Crypto/ARC4.h
+    include/Crypto/BigNumber.h
+    include/Crypto/HMAC.h
+    include/Crypto/SHA1.h
+    include/Crypto/SRP6.h
+    include/Crypto/WorldCrypt.h
 )
 
 set(sources_files
-    BigNumber.cpp
-    SRP6.cpp
+    src/BigNumber.cpp
+    src/SRP6.cpp
 )
 
 add_library(fireland_crypto STATIC
@@ -26,7 +26,8 @@ add_library(fireland_crypto STATIC
 
 target_include_directories(fireland_crypto
     PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/..   # allows #include <Crypto/SHA1.h>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/>
+    $<INSTALL_INTERFACE:include/>
 )
 
 target_link_libraries(fireland_crypto
@@ -35,6 +36,12 @@ target_link_libraries(fireland_crypto
         Boost::headers
         Boost::multiprecision
         Boost::uuid
+)
+
+# includes for internal use
+target_include_directories(fireland_crypto PRIVATE 
+  include/
+  src/
 )
 
 set_target_properties(fireland_crypto PROPERTIES FOLDER "Common")

@@ -19,8 +19,8 @@
 #include <cstdint>
 #include <span>
 
-#include "ARC4.h"
-#include "HMAC.h"
+#include <Crypto/ARC4.h>
+#include <Crypto/HMAC.h>
 
 namespace Fireland::Crypto {
 
@@ -37,10 +37,18 @@ public:
     ///
     /// The client derives the same keys because it received the seeds in the
     /// challenge packet. Must be called once after CMSG_AUTH_SESSION is verified.
-    void Init(std::span<const uint8_t> sessionKey,
-              std::span<const uint8_t> encryptSeed,
-              std::span<const uint8_t> decryptSeed)
+    void Init(std::span<const uint8_t> sessionKey)
     {
+        // Seeds for Cataclysm 4.x
+        static const uint8_t kServerEncryptSeed[] = {
+            0x08, 0xF6, 0x61, 0xC1, 0xCA, 0x4C, 0x41, 0xE0,
+            0xF2, 0x01, 0x99, 0xFF, 0x02, 0x15, 0x7A, 0x00};
+        static const uint8_t kClientDecryptSeed[] = {
+            0x40, 0xAD, 0x9C, 0xE3, 0x44, 0x2A, 0x9C, 0x0F,
+            0x9F, 0xBE, 0x31, 0xB2, 0xAD, 0x93, 0x9B, 0x61};
+
+        std::span<const uint8_t> encryptSeed(kServerEncryptSeed, sizeof(kServerEncryptSeed));
+        std::span<const uint8_t> decryptSeed(kClientDecryptSeed, sizeof(kClientDecryptSeed));
         SHA1::Digest encKey = HMAC_SHA1(sessionKey, encryptSeed);
         SHA1::Digest decKey = HMAC_SHA1(sessionKey, decryptSeed);
 
@@ -60,7 +68,9 @@ public:
     void EncryptSend(uint8_t* header, std::size_t len)
     {
         if (_initialized)
+        {
             _encrypt.Process(header, len);
+        }
     }
 
     /// Decrypt an incoming CMSG header in-place (client → server, typically 6 bytes).

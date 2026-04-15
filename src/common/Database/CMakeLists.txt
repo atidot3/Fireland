@@ -5,11 +5,13 @@
 # ============================================================================
 
 set(headers_files
-  connection_pool_wrapper.h
+  include/Database/connection_pool_wrapper.h
+  include/Database/Auth/AuthWrapper.h
 )
 
 set(sources_files
-  connection_pool_wrapper.cpp
+  src/connection_pool_wrapper.cpp
+  src/Auth/AuthWrapper.cpp
 )
 
 add_library(fireland_database STATIC
@@ -19,13 +21,20 @@ add_library(fireland_database STATIC
 
 target_include_directories(fireland_database
   PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/..   # allows #include <Network/TcpListener.h>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/>
+    $<INSTALL_INTERFACE:include/>
 )
 
 target_link_libraries(fireland_database
   PUBLIC
     Boost::mysql
     fireland_utils   # brings Boost::asio, Boost::system, Boost::log, ws2_32, etc.
+)
+
+# includes for internal use
+target_include_directories(fireland_database PRIVATE 
+  include/
+  src/
 )
 
 set_target_properties(fireland_database PROPERTIES FOLDER "Common")

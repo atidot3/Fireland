@@ -15,19 +15,19 @@
 
 #include <boost/asio/ip/tcp.hpp>
 
+#include <Database/Auth/AuthWrapper.h>
 #include <Crypto/SRP6.h>
-#include <Network/SessionKeyStore.h>
 #include <Utils/Async.hpp>
 
 #include "AuthPacket.hpp"
-#include "Realm.h"
+#include "../Realm/Realm.h"
 
 namespace Fireland::Auth {
 
 class AuthSession : public std::enable_shared_from_this<AuthSession>
 {
 public:
-    explicit AuthSession(boost::asio::ip::tcp::socket socket, Network::SessionKeyStore& keyStore) noexcept;
+    explicit AuthSession(boost::asio::ip::tcp::socket socket, Fireland::Database::Auth::AuthWrapper& dbPool) noexcept;
     ~AuthSession() noexcept;
 
     void Start();
@@ -41,12 +41,14 @@ private:
     Utils::Async::async<void> HandleRealmList(AuthPacket packet);
     Utils::Async::async<void> SendChallengeError(AuthResult error);
 
+private:
     boost::asio::ip::tcp::socket     _socket;
-    Network::SessionKeyStore&        _keyStore;
+    Fireland::Database::Auth::AuthWrapper& _dbPool;
     std::string                      _remoteAddress;
 
     Crypto::SRP6 _srp;
     std::string  _username;
+    uint32_t     _accountId;
     bool         _authenticated = false;
 
     std::array<uint8_t, 16> _reconnectRand{};  // random challenge for reconnect proof

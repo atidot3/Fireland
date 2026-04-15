@@ -19,9 +19,11 @@
 
 #include <Crypto/SHA1.h>
 #include <Crypto/WorldCrypt.h>
-#include <Network/SessionKeyStore.h>
+
+#include <Database/Auth/AuthWrapper.h>
+
 #include <Utils/Async.hpp>
-#include <Utils/ByteBuffer.h>
+#include <Utils/Bytes/ByteBuffer.h>
 
 #include "WorldOpcode.h"
 #include "WorldPacket.h"
@@ -32,7 +34,7 @@ namespace Fireland::World
     {
     public:
         explicit WorldSession(boost::asio::ip::tcp::socket socket,
-                              Network::SessionKeyStore& keyStore) noexcept;
+                              Fireland::Database::Auth::AuthWrapper& authdbPool) noexcept;
         ~WorldSession() noexcept;
 
         void Start();
@@ -48,6 +50,18 @@ namespace Fireland::World
         Utils::Async::async<void> SendAuthChallenge();
         Utils::Async::async<void> HandleAuthSession();
         Utils::Async::async<void> SendAuthResponse(AuthResponseResult result);
+        Utils::Async::async<void> SendAddonInfo();
+        Utils::Async::async<void> SendClientCacheVersion();
+        Utils::Async::async<void> SendTutorialFlags();
+        Utils::Async::async<void> SendAccountDataTimes();
+        Utils::Async::async<void> SendFeatureSystemStatus();
+        Utils::Async::async<void> SendRealmSplit(uint32_t realmId);
+        Utils::Async::async<void> SendSetTimeZoneInformation();
+        Utils::Async::async<void> SendLearnedDanceMoves();
+        Utils::Async::async<void> SendMotd();
+        Utils::Async::async<void> SendAccountRestrictedUpdate();
+        Utils::Async::async<void> SendInitialRaidGroupError();
+        Utils::Async::async<void> SendSetDfFastLaunchResources();
 
         // ---- Packet loop (post-auth) ----
         Utils::Async::async<void> PacketLoop();
@@ -62,17 +76,13 @@ namespace Fireland::World
         Utils::Async::async<void> SendPacket(const WorldPacket& packet);
 
         boost::asio::ip::tcp::socket     _socket;
-        Network::SessionKeyStore&        _keyStore;
+        Fireland::Database::Auth::AuthWrapper& _authdbPool;
         std::string                      _remoteAddress;
 
         std::string  _username;
-        uint32_t     _serverSeed = 0;
-        bool         _authenticated = false;
-
-        // Per-session random seeds sent in SMSG_AUTH_CHALLENGE DosChallenge.
-        // Stored here so WorldCrypt::Init() can use them after auth succeeds.
-        std::array<uint8_t, 16> _encryptSeed{};  // DosChallenge bytes  0-15
-        std::array<uint8_t, 16> _decryptSeed{};  // DosChallenge bytes 16-31
+        uint32_t     _accountId;
+        uint32_t     _serverSeed;
+        bool         _authenticated;
         Crypto::WorldCrypt _crypt;
     };
 } // namespace Fireland::World

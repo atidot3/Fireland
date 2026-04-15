@@ -3,14 +3,14 @@
 # ============================================================================
 
 set(headers_files
-    AuthOpcode.h
-    AuthPacket.hpp
-    AuthSession.h
-    Realm.h
+    Network/AuthOpcode.h
+    Network/AuthPacket.hpp
+    Network/AuthSession.h
+    Realm/Realm.h
 )
 
 set(sources_files
-    AuthSession.cpp
+    Network/AuthSession.cpp
     main.cpp
 )
 

@@ -2,7 +2,7 @@
 // ByteBuffer implementation (non-template parts)
 // ============================================================================
 
-#include "ByteBuffer.h"
+#include <Utils/Bytes/ByteBuffer.h>
 
 // Currently all methods are inline/header-only.
 // This .cpp exists so the library has at least one translation unit

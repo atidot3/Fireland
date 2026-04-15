@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <span>
 #include <string_view>
-
+#include <iostream>
 #include <boost/uuid/detail/sha1.hpp>
 
 namespace Fireland::Crypto {
@@ -35,7 +35,24 @@ public:
         _ctx.get_digest(raw);
 
         Digest result{};
-        std::copy(std::begin(raw), std::end(raw), result.begin());
+
+        for (int i = 0; i < 5; ++i)
+        {
+            uint32_t v = raw[i];
+
+            // 🔥 FIX ENDIAN BOOST SHA1 (CRUCIAL)
+            v =
+                ((v & 0x000000FF) << 24) |
+                ((v & 0x0000FF00) << 8)  |
+                ((v & 0x00FF0000) >> 8)  |
+                ((v & 0xFF000000) >> 24);
+
+            result[i * 4 + 0] = (v >> 24) & 0xFF;
+            result[i * 4 + 1] = (v >> 16) & 0xFF;
+            result[i * 4 + 2] = (v >> 8)  & 0xFF;
+            result[i * 4 + 3] = (v >> 0)  & 0xFF;
+        }
+
         return result;
     }
 

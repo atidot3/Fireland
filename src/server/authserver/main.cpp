@@ -15,51 +15,38 @@
 #include <Utils/ProgramOptions.h>
 #include <Utils/IoContext.h>
 
-#include <Network/SessionKeyStore.h>
 #include <Network/TcpListener.h>
 
-#include <Database/connection_pool_wrapper.h>
+#include <Database/Auth/AuthWrapper.h>
 
-#include "AuthSession.h"
-
-auto initiate_database(boost::asio::any_io_executor exec)
-{
-    Fireland::Database::connection_pool_wrapper_options opts;
-	opts.database = "FirelandAuth";
-    opts.hostname = "127.0.0.1";
-	opts.port = 3306;
-	opts.username = "root";
-	opts.password = "password";
-
-    auto db = std::make_shared<Fireland::Database::connection_pool_wrapper>(exec);
-    db->start(opts);
-
-    return db;
-}
+#include "Network/AuthSession.h"
 
 Fireland::Utils::Async::async<void> async_main(Fireland::Utils::IoContext& thread_pool)
 {
     constexpr const char* BIND_ADDRESS = "0.0.0.0";
     constexpr uint16_t    BIND_PORT = 3724;
-    
-    Fireland::Network::SessionKeyStore sessionKeyStore(thread_pool.Get());
-    auto dbPool = initiate_database(thread_pool.Get());
 
-    Fireland::Network::TcpListener<Fireland::Auth::AuthSession> listener(
-        thread_pool,
-        [&sessionKeyStore, dbPool](boost::asio::ip::tcp::socket socket) {
-            return std::make_shared<Fireland::Auth::AuthSession>(std::move(socket), sessionKeyStore);
-        }
-    );
+    Fireland::Database::Auth::AuthWrapper dbPool(thread_pool.Get());
+    dbPool.start();
+    if (!co_await dbPool.ping())
+    {
+        FL_LOG_ERROR("AuthServer", "Failed to connect to the database. Shutting down.");
+
+        thread_pool.Stop();
+        dbPool.stop();
+ 
+        co_return;
+    }
+    
+    Fireland::Network::TcpListener<Fireland::Auth::AuthSession> listener(thread_pool, [&dbPool](boost::asio::ip::tcp::socket socket)
+    {
+        return std::make_shared<Fireland::Auth::AuthSession>(std::move(socket), dbPool);
+    });
 
     FL_LOG_INFO("AuthServer", "Running. Press Ctrl+C to stop.");
     co_await listener.Listen(BIND_ADDRESS, BIND_PORT);
 
-    if (dbPool)
-    {
-        dbPool->stop();
-        dbPool = nullptr;
-    }
+    dbPool.stop();
 }
 
 int main(int argc, char* argv[])
@@ -70,8 +57,10 @@ int main(int argc, char* argv[])
     if (!opts.Parse(argc, argv))
         return opts.ExitCode();
 
+    std::string configFile = opts.ConfigFile();
+    FL_LOG_INFO("AuthServer", "Using config file: {}", configFile);
 	// Log configuration
-    Fireland::Utils::Log::Init(opts.ConfigFile());
+    Fireland::Utils::Log::Init(configFile);
     if (opts.Quiet()) Fireland::Utils::Log::SetConsoleEnabled(false);
 
     std::cout << "========================================\n"

@@ -17,21 +17,22 @@
 
 #include <Utils/Log.h>
 #include <Utils/StringUtils.h>
-#include <Utils/ByteBuffer.h>
+#include <Utils/Bytes/ByteBuffer.h>
 
 using namespace Fireland::Auth;
 using namespace Fireland::Utils::Async;
 using namespace Fireland::Utils;
 
-// ---- Hardcoded test account ------------------------------------------------
-static constexpr std::string_view HARDCODED_USERNAME = "ATIDOTE";
-static constexpr std::string_view HARDCODED_PASSWORD = "ATIDOTE";
-
 // ---- Construction ----------------------------------------------------------
 
-AuthSession::AuthSession(boost::asio::ip::tcp::socket socket, Network::SessionKeyStore& keyStore) noexcept
-    : _socket(std::move(socket))
-    , _keyStore(keyStore)
+AuthSession::AuthSession(boost::asio::ip::tcp::socket socket, Fireland::Database::Auth::AuthWrapper& dbPool) noexcept
+    : _socket{std::move(socket)}
+    , _dbPool{dbPool}
+    , _remoteAddress{"<unknown>"}
+    , _srp{}
+    , _username{}
+    , _accountId{0}
+    , _authenticated{false}
 {
     boost::system::error_code ec;
     auto ep = _socket.remote_endpoint(ec);
@@ -142,40 +143,45 @@ async<void> AuthSession::HandleLogonChallenge(AuthPacket packet)
     _username = StringUtils::ToUpper(auth_c.account_name);
     FL_LOG_INFO("AuthSession", "[{}] Logon challenge for '{}' (raw: '{}', len={})", _remoteAddress, _username, auth_c.account_name, auth_c.account_len);
 
-    // Check if account exists (hardcoded)
-    if (_username != HARDCODED_USERNAME)
+    auto account = co_await _dbPool.GetAccountByUsername(_username);
+    if (!account)
     {
-        FL_LOG_WARNING("AuthSession", "[{}] Unknown account '{}' (expected '{}')",
-            _remoteAddress, _username, HARDCODED_USERNAME);
+        FL_LOG_WARNING("AuthSession", "[{}] Unknown account '{}'", _remoteAddress, _username);
         co_await SendChallengeError(AuthResult::FAIL_UNKNOWN_ACCOUNT);
         co_return;
     }
 
-    FL_LOG_DEBUG("AuthSession", "[{}] Account matched, computing SRP6 verifier...", _remoteAddress);
+    // Validate stored credentials before using them in SRP6
+    if (account->salt.size() != 32 || account->verifier.empty())
+    {
+        FL_LOG_ERROR("AuthSession", "[{}] account '{}' has invalid credentials in DB (salt={} bytes, verifier={} bytes)", _remoteAddress, _username, account->salt.size(), account->verifier.size());
+        co_await SendChallengeError(AuthResult::FAIL_UNKNOWN_ACCOUNT);
+        co_return;
+    }
+
+    FL_LOG_DEBUG("AuthSession", "[{}] Account matched, setting up SRP6 challenge...", _remoteAddress);
+    _accountId = account->id; // store account ID for later use
 
     // Compute SRP6 verifier and generate challenge
-    _srp.ComputeVerifier(_username, HARDCODED_PASSWORD);
+    Crypto::BigNumber salt, verifier;
+    salt.SetBinary(account->salt);
+    verifier.SetBinary(account->verifier);
+    _srp.SetVerifier(_username, salt, verifier);
     _srp.GenerateChallenge();
-
-    // Build response
-    auto B_bytes    = _srp.GetB().AsByteArray(32);
-    auto N_bytes    = Crypto::SRP6::N.AsByteArray(32);
-    auto g_bytes    = Crypto::SRP6::g.AsByteArray(1);
-    auto salt_bytes = _srp.GetSalt().AsByteArray(32);
-
-    FL_LOG_TRACE("AuthSession", "[{}] SRP6 B ({} bytes): {}",
-        _remoteAddress, B_bytes.size(), StringUtils::HexStr(B_bytes));
-    FL_LOG_TRACE("AuthSession", "[{}] SRP6 salt ({} bytes): {}",
-        _remoteAddress, salt_bytes.size(), StringUtils::HexStr(salt_bytes));
+    auto& B = _srp.GetB();
+    auto& g = Crypto::SRP6::g;
+    auto& N = Crypto::SRP6::N;
+    auto g_bytes = g.AsByteArray(1);
+    auto N_bytes = N.AsByteArray(32);
 
     ByteBuffer response(119);
     response << AuthOpcode::CMD_AUTH_LOGON_CHALLENGE // cmd
              << uint8_t(0x00)                                            // unk
              << AuthResult::SUCCESS                                      // error
-             << B_bytes                                                  // B (32 bytes)
+             << B.AsByteArray(32)                                        // B (32 bytes)
              << static_cast<uint8_t>(g_bytes.size()) << g_bytes          // g_len + g
              << static_cast<uint8_t>(N_bytes.size()) << N_bytes          // N_len + N
-             << salt_bytes;                                              // salt (32 bytes)
+             << salt.AsByteArray(32);                                    // salt (32 bytes)
     response.Pad(16);                                                    // CRC salt (16 zero bytes)
     response << uint8_t(0x00);                                           // security_flags
 
@@ -222,8 +228,8 @@ async<void> AuthSession::HandleLogonProof(AuthPacket packet)
     FL_LOG_INFO("AuthSession", "[{}] '{}' authenticated successfully", _remoteAddress, _username);
     _authenticated = true;
 
-    // Store session key for future reconnects
-    _keyStore.Store(_username, _srp.GetSessionKey());
+    // Store session key for future reconnects and world server handoff
+    co_await _dbPool.StoreSessionKey(_accountId, _srp.GetSessionKey());
 
     // Build success response
     auto& M2 = _srp.GetServerProof();
@@ -272,7 +278,7 @@ async<void> AuthSession::HandleReconnectChallenge(AuthPacket packet)
     FL_LOG_INFO("AuthSession", "[{}] Reconnect challenge for '{}'", _remoteAddress, _username);
 
     // Look up stored session key
-    auto storedKey = co_await _keyStore.Lookup(_username);
+    auto storedKey = co_await _dbPool.LookupSessionKey(_accountId);
     if (!storedKey)
     {
         FL_LOG_WARNING("AuthSession", "[{}] Reconnect failed: no session key stored for '{}'",
@@ -334,7 +340,7 @@ async<void> AuthSession::HandleReconnectProof(AuthPacket packet)
     FL_LOG_TRACE("AuthSession", "[{}] R2: {}", _remoteAddress, StringUtils::HexStr(R2));
 
     // Look up stored session key
-    auto storedKey = co_await _keyStore.Lookup(_username);
+    auto storedKey = co_await _dbPool.LookupSessionKey(_accountId);
     if (!storedKey)
     {
         FL_LOG_WARNING("AuthSession", "[{}] Reconnect proof failed: no session key for '{}'",

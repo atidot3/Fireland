@@ -120,6 +120,19 @@ namespace Fireland::Utils::StringUtils
             | std::ranges::to<std::string>();
     }
 
+    inline std::string HexStrCompact(std::span<const uint8_t> data)
+    {
+        std::string out;
+        out.reserve(data.size() * 2);
+
+        for (uint8_t b : data)
+        {
+            std::format_to(std::back_inserter(out), "{:02x}", b);
+        }
+
+        return out;
+    }
+
     /// Convert binary data to a hexadecimal string (C++20).
     inline std::string HexStr(std::span<const uint8_t> data)
     {
@@ -127,5 +140,14 @@ namespace Fireland::Utils::StringUtils
             | std::views::transform([](uint8_t b) { return std::format("{:02X}", b); })
             | std::views::join_with(' ')
             | std::ranges::to<std::string>();
+    }
+
+    template<typename... Args>
+    inline std::string concat_as_string_with_separator(std::string separator, Args&&... args) noexcept
+    {
+        std::ostringstream oss;
+        ((oss << args << separator), ...);
+        auto s = oss.str();
+        return s.substr(0, s.length() - separator.length()); //remove last separator
     }
 } // namespace Fireland::Utils::StringUtils

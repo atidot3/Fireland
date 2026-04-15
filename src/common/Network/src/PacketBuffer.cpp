@@ -2,7 +2,7 @@
 // PacketBuffer implementation
 // ============================================================================
 
-#include "PacketBuffer.h"
+#include <Network/PacketBuffer.h>
 
 #include <cassert>
 #include <cstring>

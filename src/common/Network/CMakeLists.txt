@@ -5,18 +5,16 @@
 # ============================================================================
 
 set(headers_files
-  PacketBuffer.h
-  SessionKeyStore.h
-  SessionManager.h
-  TcpListener.h
-  TcpSession.h
+  include/Network/PacketBuffer.h
+  include/Network/SessionManager.h
+  include/Network/TcpListener.h
+  include/Network/TcpSession.h
 )
 
 set(sources_files
-  PacketBuffer.cpp
-  SessionKeyStore.cpp
-  SessionManager.cpp
-  TcpSession.cpp
+  src/PacketBuffer.cpp
+  src/SessionManager.cpp
+  src/TcpSession.cpp
 )
 
 add_library(fireland_network STATIC
@@ -26,7 +24,14 @@ add_library(fireland_network STATIC
 
 target_include_directories(fireland_network
   PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/..   # allows #include <Network/TcpListener.h>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/>
+    $<INSTALL_INTERFACE:include/>
+)
+
+# includes for internal use
+target_include_directories(fireland_network PRIVATE 
+  include/
+  src/
 )
 
 target_link_libraries(fireland_network

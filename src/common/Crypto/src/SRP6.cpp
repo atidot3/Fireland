@@ -1,4 +1,4 @@
-#include "SRP6.h"
+#include "Crypto/SRP6.h"
 
 #include <algorithm>
 #include <cctype>

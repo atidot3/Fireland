@@ -26,7 +26,7 @@
 #include <string>
 #include <vector>
 
-#include <Utils/ByteBuffer.h>
+#include <Utils/Bytes/ByteBuffer.h>
 
 namespace Fireland::World
 {

@@ -10,8 +10,8 @@
 #include <array>
 #include <string_view>
 
-#include "BigNumber.h"
-#include "SHA1.h"
+#include <Crypto/BigNumber.h>
+#include <Crypto/SHA1.h>
 
 namespace Fireland::Crypto {
 
@@ -38,6 +38,7 @@ public:
     // --- Accessors (valid after GenerateChallenge) --------------------------
     const BigNumber& GetB()    const { return _B; }
     const BigNumber& GetSalt() const { return _salt; }
+    const BigNumber& GetVerifier() const { return _verifier; }
 
     // --- Accessors (valid after VerifyClientProof succeeds) -----------------
     const SHA1::Digest&            GetServerProof() const { return _M2; }

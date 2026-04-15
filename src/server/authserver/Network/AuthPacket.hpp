@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Utils/ByteBuffer.h>
+#include <Utils/Bytes/ByteBuffer.h>
 #include <Utils/Describe.hpp>
 
 #include "AuthOpcode.h"

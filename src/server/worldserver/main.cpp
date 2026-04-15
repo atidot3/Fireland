@@ -12,11 +12,11 @@
 #include <iostream>
 
 #include <Utils/Async.hpp>
+#include <Utils/StringUtils.h>
 #include <Utils/Log.h>
 #include <Utils/ProgramOptions.h>
 #include <Utils/IoContext.h>
 
-#include <Network/SessionKeyStore.h>
 #include <Network/TcpListener.h>
 
 #include <Database/connection_pool_wrapper.h>
@@ -43,24 +43,46 @@ Fireland::Utils::Async::async<void> async_main(Fireland::Utils::IoContext& threa
     constexpr const char* BIND_ADDRESS = "0.0.0.0";
     constexpr uint16_t    BIND_PORT = 8085;
 
-    Fireland::Network::SessionKeyStore sessionKeyStore(thread_pool.Get());
-    auto dbPool = initiate_database(thread_pool.Get());
+    Fireland::Database::Auth::AuthWrapper authdbPool(thread_pool.Get());
+    authdbPool.start();
+    if (!co_await authdbPool.ping())
+    {
+        FL_LOG_ERROR("WorldServer", "Failed to connect to the database. Shutting down.");
+
+        thread_pool.Stop();
+        authdbPool.stop();
+ 
+        co_return;
+    }
+
+    // ---- TEST SHA1 
+    auto hash = Fireland::Crypto::SHA1::Hash("abc");
+    auto string_hash = Fireland::Utils::StringUtils::HexStrCompact(hash);
+
+    std::cout << "SHA1 = " << string_hash << std::endl;
+
+    if (string_hash == "a9993e364706816aba3e25717850c26c9cd0d89d")
+    {
+        FL_LOG_INFO("WorldSession", "SHA1 Check: SUCCESS !");
+    }
+    else
+    {
+        FL_LOG_ERROR("WorldSession",
+            "SHA1 Check: FAILED ! {} != expected",
+            string_hash);
+    }
 
     Fireland::Network::TcpListener<Fireland::World::WorldSession> listener(
         thread_pool,
-        [&sessionKeyStore, dbPool](boost::asio::ip::tcp::socket socket) {
-            return std::make_shared<Fireland::World::WorldSession>(std::move(socket), sessionKeyStore);
+        [&authdbPool](boost::asio::ip::tcp::socket socket) {
+            return std::make_shared<Fireland::World::WorldSession>(std::move(socket), authdbPool);
         }
     );
 
     FL_LOG_INFO("WorldServer", "Running. Press Ctrl+C to stop.");
     co_await listener.Listen(BIND_ADDRESS, BIND_PORT);
 
-    if (dbPool)
-    {
-        dbPool->stop();
-        dbPool = nullptr;
-    }
+    authdbPool.stop();
 }
 
 int main(int argc, char* argv[])
