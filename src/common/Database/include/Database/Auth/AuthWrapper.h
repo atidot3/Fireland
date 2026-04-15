@@ -1,6 +1,6 @@
 #pragma once
 
-#pragma once
+#include <span>
 
 #include <Database/connection_pool_wrapper.h>
 

@@ -272,34 +272,6 @@ async<void> WorldSession::HandleAuthSession()
     _crypt.Init(std::span<const uint8_t>(*K));
     FL_LOG_DEBUG("WorldSession", "[{}] ARC4 encryption initialised", _remoteAddress);
 
-    // --- TEST HMAC RFC 2202 ---
-    std::string testKey = "Jefe";
-    std::string testData = "what do ya want for nothing?";
-
-    // Conversion en spans d'octets
-    auto keySpan = std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(testKey.data()), testKey.size());
-    auto dataSpan = std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(testData.data()), testData.size());
-
-    // Calcul
-    Fireland::Crypto::SHA1::Digest result = Fireland::Crypto::HMAC_SHA1(keySpan, dataSpan);
-
-    // Affichage en Hexadécimal pour comparaison
-    std::string hexResult;
-    for (auto byte : result) {
-        hexResult += std::format("{:02x}", byte);
-    }
-
-    FL_LOG_DEBUG("WorldSession", "HMAC Test Result: {}", hexResult);
-    FL_LOG_DEBUG("WorldSession", "HMAC Expected:    eff41f6bcaf41580b0330c313a17084539af8796");
-
-    if (hexResult == "eff41f6bcaf41580b0330c313a17084539af8796") {
-        FL_LOG_INFO("WorldSession", "HMAC Check: SUCCESS ! Ta crypto est mathématiquement correcte.");
-    } else {
-        FL_LOG_ERROR("WorldSession", "HMAC Check: FAILED ! Ton implémentation HMAC est erronée.");
-    }
-    // --------------------------
-
-
     // 5. Send Authentication Handshake Sequence for 4.3.4 (15595)
     // Precise order and content in 4.3.4 is critical for the client to proceed to
     // Character Enum.

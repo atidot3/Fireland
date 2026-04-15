@@ -34,7 +34,7 @@ public:
     /// serve as HMAC keys:
     ///   encKey = HMAC-SHA1(K, encryptSeed)   — used for outgoing SMSG headers
     ///   decKey = HMAC-SHA1(K, decryptSeed)   — used for incoming CMSG headers
-    ///
+    /// Keys are hardcoded in the client
     /// The client derives the same keys because it received the seeds in the
     /// challenge packet. Must be called once after CMSG_AUTH_SESSION is verified.
     void Init(std::span<const uint8_t> sessionKey)
@@ -56,6 +56,7 @@ public:
         _decrypt.Init(std::span<const uint8_t>(decKey));
 
         // ARC4-drop1024: discard the first 1024 keystream bytes from each stream
+        // WoW uses ARC4-drop1024 to strengthen the cipher.
         _encrypt.Drop(1024);
         _decrypt.Drop(1024);
 
