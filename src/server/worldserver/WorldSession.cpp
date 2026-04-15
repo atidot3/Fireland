@@ -13,7 +13,6 @@
 #include <boost/asio/detached.hpp>
 
 #include <Utils/Bytes/ByteBuffer.h>
-#include <Utils/Bytes/ByteHelper.hpp>
 #include <Utils/Log.h>
 #include <Utils/StringUtils.h>
 
@@ -300,17 +299,16 @@ async<void> WorldSession::SendAuthResponse(AuthResponseResult result)
 
     if (result == AuthResponseResult::AUTH_OK)
     {
-        ByteHelper helper(response);
-        helper.WriteBit(false); // isQueued
-        helper.WriteBit(true);  // hasSuccessInfo
+        response.WriteBit(false); // isQueued
+        response.WriteBit(true);  // hasSuccessInfo
 
-        helper.WriteBit(false); // isBattleNetAccount
-        helper.WriteBit(false); // isTrialAccount
-        helper.WriteBit(true);  // isExpansionStandard
+        response.WriteBit(false); // isBattleNetAccount
+        response.WriteBit(false); // isTrialAccount
+        response.WriteBit(true);  // isExpansionStandard
 
-        helper.FlushBits();
+        response.FlushBits();
 
-        response << uint32_t(0xFFFFFFFF);          // TimeRemain
+        response << uint32_t(0);                   // TimeRemain
         response << uint8_t(EXPANSION_CATACLYSM);  // activeExpansionLevel
         response << uint32_t(0);                   // TimeSecondsUntilPCKick
         response << uint8_t(EXPANSION_CATACLYSM);  // accountExpansionLevel
@@ -319,11 +317,11 @@ async<void> WorldSession::SendAuthResponse(AuthResponseResult result)
     }
     else
     {
-        ByteHelper helper(response);
-        helper.WriteBit(false); // isQueued
-        helper.WriteBit(false); // hasSuccessInfo
-        helper.FlushBits();     // → 1 byte: 0x00
+        response.WriteBit(false); // isQueued
+        response.WriteBit(false); // hasSuccessInfo
+        response.FlushBits();     // → 1 byte: 0x00
     }
+    
     response << result;
 
     FL_LOG_DEBUG("WorldSession", "[{}] Sending SMSG_AUTH_RESPONSE (result=0x{:02X})", _remoteAddress, static_cast<uint8_t>(result));
@@ -337,10 +335,9 @@ async<void> WorldSession::SendAddonInfo()
     WorldPacket response(SMSG_ADDON_INFO);
 
     // Cata 4.3.4 (15595) uses bit-packed counts (23 bits each)
-    ByteHelper helper(response);
-    helper.WriteBits(0, 23);// addonCount
-    helper.WriteBits(0, 23);// bannedAddonCount
-    helper.FlushBits(); // align to byte boundary after writing bit-packed counts
+    response.WriteBits(0, 23);// addonCount
+    response.WriteBits(0, 23);// bannedAddonCount
+    response.FlushBits(); // align to byte boundary after writing bit-packed counts
 
     co_await SendPacket(response);
     FL_LOG_INFO("WorldSession", "[{}] SMSG_ADDON_INFO sent (4.3.4 15595 bit-packed format)", _remoteAddress);
@@ -366,9 +363,9 @@ async<void> WorldSession::SendTutorialFlags()
 async<void> WorldSession::SendAccountRestrictedUpdate()
 {
     WorldPacket data(SMSG_ACCOUNT_RESTRICTED_UPDATE);
-    ByteHelper helper(data);
-    helper.WriteBit(false); // isRestricted
-    helper.FlushBits();
+    
+    data.WriteBit(false); // isRestricted
+    data.FlushBits();
     co_await SendPacket(data);
     FL_LOG_INFO("WorldSession", "[{}] SMSG_ACCOUNT_RESTRICTED_UPDATE sent", _remoteAddress);
 }
@@ -376,9 +373,9 @@ async<void> WorldSession::SendAccountRestrictedUpdate()
 async<void> WorldSession::SendSetDfFastLaunchResources()
 {
     WorldPacket data(SMSG_SET_DF_FAST_LAUNCH_RESOURCES);
-    ByteHelper helper(data);
-    helper.WriteBits(0, 32); // Count (32 bits for bits count?)
-    helper.FlushBits();
+    
+    data.WriteBits(0, 32); // Count (32 bits for bits count?)
+    data.FlushBits();
     co_await SendPacket(data);
     FL_LOG_INFO("WorldSession", "[{}] SMSG_SET_DF_FAST_LAUNCH_RESOURCES sent", _remoteAddress);
 }
@@ -409,18 +406,16 @@ async<void> WorldSession::SendFeatureSystemStatus()
     features << uint8_t(0);  // ScrollOfResurrectionDailyLimitTotal
     features << uint32_t(0); // ScrollOfResurrectionMaxLevel
 
-    ByteHelper helper(features);
-    helper.WriteBit(false); // QuestHotfixesEnabled
-    helper.WriteBit(false); // EuropaEnabled
-    helper.WriteBit(false); // EquipmentManagerEnabled
-    helper.WriteBit(false); // CanPurchaseLevel
-    helper.WriteBit(false); // VoiceChatEnabled
-    helper.WriteBit(false); // ScrollOfResurrectionEnabled
-    helper.WriteBit(false); // ComplaintEnabled
-    helper.WriteBit(false); // SessionTimerEnabled
-    helper.WriteBit(false); // KioskModeEnabled
-    helper.FlushBits();
-
+    features.WriteBit(false); // QuestHotfixesEnabled
+    features.WriteBit(false); // EuropaEnabled
+    features.WriteBit(false); // EquipmentManagerEnabled
+    features.WriteBit(false); // CanPurchaseLevel
+    features.WriteBit(false); // VoiceChatEnabled
+    features.WriteBit(false); // ScrollOfResurrectionEnabled
+    features.WriteBit(false); // ComplaintEnabled
+    features.WriteBit(false); // SessionTimerEnabled
+    features.WriteBit(false); // KioskModeEnabled
+    features.FlushBits();
     co_await SendPacket(features);
     FL_LOG_INFO("WorldSession", "[{}] SMSG_FEATURE_SYSTEM_STATUS sent (4.3.4 format)", _remoteAddress);
 }
@@ -432,10 +427,9 @@ async<void> WorldSession::SendRealmSplit(uint32_t realmId)
 
     split << uint32_t(realmId); // Realm ID
     split << uint32_t(0);       // State (0 = Normal)
-    
-    ByteHelper helper(split);
-    helper.WriteBits(static_cast<uint32_t>(splitDate.size()), 7);
-    helper.FlushBits();
+
+    split.WriteBits(static_cast<uint32_t>(splitDate.size()), 7);
+    split.FlushBits();
     split.WriteString(splitDate);
 
     co_await SendPacket(split);
@@ -448,10 +442,9 @@ async<void> WorldSession::SendSetTimeZoneInformation()
     std::string serverTz = "UTC";
     std::string localTz = "UTC";
 
-    ByteHelper helper(data);
-    helper.WriteBits(static_cast<uint32_t>(serverTz.length()), 7);
-    helper.WriteBits(static_cast<uint32_t>(localTz.length()), 7);
-    helper.FlushBits();
+    data.WriteBits(static_cast<uint32_t>(serverTz.length()), 7);
+    data.WriteBits(static_cast<uint32_t>(localTz.length()), 7);
+    data.FlushBits();
 
     data.WriteString(serverTz);
     data.WriteString(localTz);
@@ -463,9 +456,9 @@ async<void> WorldSession::SendSetTimeZoneInformation()
 async<void> WorldSession::SendLearnedDanceMoves()
 {
     WorldPacket data(SMSG_LEARNED_DANCE_MOVES);
-    ByteHelper helper(data);
-    helper.WriteBits(0, 23); // Count (23 bits in Cata 4.3.4)
-    helper.FlushBits();
+
+    data.WriteBits(0, 23); // Count (23 bits in Cata 4.3.4)
+    data.FlushBits();
     co_await SendPacket(data);
     FL_LOG_INFO("WorldSession", "[{}] SMSG_LEARNED_DANCE_MOVES sent (0 moves, bit-packed)", _remoteAddress);
 }
@@ -475,12 +468,11 @@ async<void> WorldSession::SendMotd()
     WorldPacket motd(SMSG_MOTD);
     std::vector<std::string> lines = {"Bo0p !"};
 
-    ByteHelper helper(motd);
-    helper.WriteBits(static_cast<uint32_t>(lines.size()), 4);
+    motd.WriteBits(static_cast<uint32_t>(lines.size()), 4);
     for (auto const &line : lines)
-        helper.WriteBits(static_cast<uint32_t>(line.length()), 11);
+        motd.WriteBits(static_cast<uint32_t>(line.length()), 11);
     
-    helper.FlushBits();
+    motd.FlushBits();
 
     for (auto const &line : lines)
     {

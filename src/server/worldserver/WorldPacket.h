@@ -39,9 +39,12 @@ public:
 
     // ---- Construction -------------------------------------------------------
 
-    WorldPacket() = default;
+    WorldPacket()
+        : ByteBuffer()
+        , _opcode(0)
+    {}
 
-    explicit WorldPacket(uint32_t opcode, std::size_t capacity = 256)
+    explicit WorldPacket(uint32_t opcode, std::size_t capacity = 200)
         : ByteBuffer(capacity)
         , _opcode(opcode)
     {}
