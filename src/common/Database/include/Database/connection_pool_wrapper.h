@@ -33,11 +33,21 @@ namespace Fireland::Database
 
 	namespace sql
 	{
-		//get typename (demangled)
+		//get typename (demangled), sans préfixe struct/class/union (MSVC)
 		template<typename T>
-		auto name()
+		std::string name()
 		{
-			return boost::core::demangle(typeid(T).name());
+			std::string n = boost::core::demangle(typeid(T).name());
+			for (const char* prefix : {"struct ", "class ", "union "})
+			{
+				std::size_t len = std::strlen(prefix);
+				if (n.size() >= len && n.compare(0, len, prefix) == 0)
+				{
+					n.erase(0, len);
+					break;
+				}
+			}
+			return n;
 		}
 
 		//get a tie (tuple of references) of all described members

@@ -9,6 +9,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <string>
 
 #include <Utils/Async.hpp>
 #include <Utils/Log.h>
@@ -18,8 +19,51 @@
 #include <Network/TcpListener.h>
 
 #include <Database/Auth/AuthWrapper.h>
+#include <Crypto/SRP6.h>
 
 #include "Network/AuthSession.h"
+
+// ---------------------------------------------------------------------------
+// CreateAccount — helper 
+// ---------------------------------------------------------------------------
+Fireland::Utils::Async::async<void> create_account(
+    Fireland::Utils::IoContext& thread_pool,
+    std::string_view username,
+    std::string_view password)
+{
+    Fireland::Database::Auth::AuthWrapper db(thread_pool.Get());
+    db.start();
+
+    if (!co_await db.ping())
+    {
+        FL_LOG_ERROR("AuthServer", "Cannot connect to database.");
+        thread_pool.Stop();
+        db.stop();
+        co_return;
+    }
+
+    // Calcul SRP6 : génère sel aléatoire + vérificateur
+    Fireland::Crypto::SRP6 srp;
+    srp.ComputeVerifier(username, password);
+
+    auto saltBytes     = srp.GetSalt().AsByteArray(32);
+    auto verifierBytes = srp.GetVerifier().AsByteArray(32);
+
+    account acc{};
+    acc.username  = std::string(username);
+    acc.salt      = std::vector<uint8_t>(saltBytes.begin(), saltBytes.end());
+    acc.verifier  = std::vector<uint8_t>(verifierBytes.begin(), verifierBytes.end());
+    acc.expansion = 3; // Cataclysm
+
+    auto result = co_await db.Create(acc);
+    if (result)
+        FL_LOG_INFO("AuthServer", "Account '{}' created (id={}).", result->username, result->id);
+    else
+        FL_LOG_ERROR("AuthServer", "Failed to create account '{}' (already exists?).", username);
+
+    thread_pool.Stop();
+    db.stop();
+}
 
 Fireland::Utils::Async::async<void> async_main(Fireland::Utils::IoContext& thread_pool)
 {

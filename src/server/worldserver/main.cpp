@@ -23,21 +23,6 @@
 
 #include "WorldSession.h"
 
-auto initiate_database(boost::asio::any_io_executor exec)
-{
-    Fireland::Database::connection_pool_wrapper_options opts;
-    opts.database = "FirelandAuth";
-    opts.hostname = "127.0.0.1";
-    opts.port = 3306;
-    opts.username = "root";
-    opts.password = "password";
-
-    auto db = std::make_shared<Fireland::Database::connection_pool_wrapper>(exec);
-    db->start(opts);
-
-    return db;
-}
-
 Fireland::Utils::Async::async<void> async_main(Fireland::Utils::IoContext& thread_pool)
 {
     constexpr const char* BIND_ADDRESS = "0.0.0.0";

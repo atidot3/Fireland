@@ -527,6 +527,7 @@ async<WorldPacket> WorldSession::ReadClientPacket()
 
     // 2. Parse opcode and payload size; build an empty WorldPacket.
     WorldPacket packet = WorldPacket::FromCmsgHeader(headerBuf);
+    FL_LOG_DEBUG("WorldSession", "[{}] Parsed opcode {} with payload size {} bytes", _remoteAddress, packet.opcodeName(), packet.Size());
 
     // 3. Read the payload (if any) directly into the packet.
     uint16_t wireSize = (uint16_t{headerBuf[0]} << 8) | headerBuf[1];

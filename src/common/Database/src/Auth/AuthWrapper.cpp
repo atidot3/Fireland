@@ -29,8 +29,8 @@ AuthWrapper::AuthWrapper(boost::asio::any_io_executor exec) noexcept
     : _database_host{ "127.0.0.1" }
     , _database_port { 3306 }
     , _database_name { "firelands_auth" }
-    , _database_user { "user" }
-    , _database_password { "password" }
+    , _database_user { "root" }
+    , _database_password { "rootpassword" }
     , _connection_pool { exec}
 {
 }
