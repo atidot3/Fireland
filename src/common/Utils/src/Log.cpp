@@ -19,15 +19,10 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <sstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
-
-#include <boost/asio/post.hpp>
-#include <boost/asio/strand.hpp>
-#include <boost/asio/any_io_executor.hpp>
 
 #ifdef _WIN32
 #   ifndef WIN32_LEAN_AND_MEAN
@@ -263,10 +258,6 @@ static std::atomic<bool>                                          s_initialized{
 static std::unordered_map<std::string, std::unique_ptr<Appender>> s_appenders;
 static std::unordered_map<std::string, LoggerConfig>              s_loggers;
 
-// Strand for serializing I/O — stored as any_io_executor (make_strand returns a strand<any_io_executor>
-// which is itself an Executor, so it erases cleanly). Set once via SetExecutor(), before workers start.
-static std::optional<boost::asio::any_io_executor> s_strand;
-
 // ============================================================================
 // Enable VT-100 escape sequences on Windows
 // ============================================================================
@@ -480,12 +471,6 @@ bool ShouldLog(std::string_view logger, Level level)
            static_cast<uint8_t>(level) <= static_cast<uint8_t>(max);
 }
 
-void SetExecutor(boost::asio::any_io_executor exec)
-{
-    // make_strand returns strand<any_io_executor>, which is itself an Executor
-    s_strand.emplace(boost::asio::make_strand(std::move(exec)));
-}
-
 void Write(std::string_view logger, Level level, std::string_view message,
            std::source_location loc)
 {
@@ -501,31 +486,12 @@ void Write(std::string_view logger, Level level, std::string_view message,
     const auto* cfg = FindLogger(logger);
     if (!cfg) return;
 
-    // Collect target appenders (maps are frozen — raw pointers are stable)
-    std::vector<Appender*> targets;
-    targets.reserve(cfg->appenderNames.size());
     for (const auto& appName : cfg->appenderNames)
     {
         auto it = s_appenders.find(appName);
         if (it != s_appenders.end())
-            targets.push_back(it->second.get());
+            it->second->Write(level, logger, message, loc);
     }
-    if (targets.empty()) return;
-
-    // Formatting happens here, on the calling thread
-    auto dispatch = [targets, level,
-                     loggerStr = std::string(logger),
-                     msgStr    = std::string(message),
-                     loc]()
-    {
-        for (auto* appender : targets)
-            appender->Write(level, loggerStr, msgStr, loc);
-    };
-
-    if (s_strand)
-        boost::asio::post(*s_strand, std::move(dispatch));
-    else
-        dispatch();
 }
 
 void SetLevel(std::string_view logger, Level level)

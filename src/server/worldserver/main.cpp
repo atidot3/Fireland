@@ -83,7 +83,6 @@ int main(int argc, char* argv[])
     try
     {
         Fireland::Utils::IoContext ioContext(THREAD_COUNT);
-        Fireland::Utils::Log::SetExecutor(ioContext.Get());
         boost::asio::co_spawn(ioContext.Get(), async_main(ioContext), boost::asio::detached);
         ioContext.Join();
         FL_LOG_INFO("WorldServer", "Shutdown complete.");
