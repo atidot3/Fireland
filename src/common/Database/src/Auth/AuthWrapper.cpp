@@ -26,19 +26,15 @@ void db_err(const boost::mysql::error_with_diagnostics& e)
     FL_LOG_FATAL("Database", "> Diagnostics: server='{}', client='{}'", server_error, client_error);
 }
 
-AuthWrapper::AuthWrapper(boost::asio::any_io_executor exec) noexcept
-    : _database_host{ "127.0.0.1" }
-    , _database_port { 3306 }
-    , _database_name { "firelands_auth" }
-    , _database_user { "root" }
-    , _database_password { "rootpassword" }
+AuthWrapper::AuthWrapper(boost::asio::any_io_executor exec, connection_pool_wrapper_options options) noexcept
+    : _options{ std::move(options) }
     , _connection_pool { exec}
 {
 }
 
 void AuthWrapper::start()
 {
-    _connection_pool.start(connection_pool_wrapper_options{_database_user, _database_password, _database_name, _database_host, _database_port});
+    _connection_pool.start(_options);
 }
 
 void AuthWrapper::stop()

@@ -15,7 +15,7 @@ namespace Fireland::Database::Auth
     {
         friend class Fireland::Database::connection_pool_wrapper;
     public:
-        AuthWrapper(boost::asio::any_io_executor executor) noexcept;
+        AuthWrapper(boost::asio::any_io_executor executor, connection_pool_wrapper_options options) noexcept;
 
         // starting/stopping the wrapper
         void start();
@@ -34,11 +34,7 @@ namespace Fireland::Database::Auth
         Utils::Async::async<std::optional<std::vector<realmlist>>> GetRealmlist() noexcept;
 
     private:
-        const std::string _database_host;
-        const uint16_t _database_port;
-        const std::string _database_name;
-        const std::string _database_user;
-        const std::string _database_password;
+		const Fireland::Database::connection_pool_wrapper_options _options;
         connection_pool_wrapper _connection_pool;
     };
 } // namespace Fireland::Database::Auth

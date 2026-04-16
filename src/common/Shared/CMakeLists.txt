@@ -13,6 +13,7 @@ set(headers_files
 )
 
 set(sources_files
+    src/test.cpp
 )
 
 add_library(fireland_shared STATIC

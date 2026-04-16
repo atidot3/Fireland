@@ -14,6 +14,7 @@
 #include <boost/asio/signal_set.hpp>
 
 #include <Utils/Async.hpp>
+#include <Utils/Configuration/Configuration.h>
 #include <Utils/Log.h>
 #include <Utils/ProgramOptions.h>
 #include <Utils/IoContext.h>
@@ -26,54 +27,16 @@
 #include "Network/AuthSession.h"
 #include "Realm/Realm.h"
 
-// ---------------------------------------------------------------------------
-// CreateAccount — helper
-// ---------------------------------------------------------------------------
-Fireland::Utils::Async::async<void> create_account(
-    Fireland::Utils::IoContext& thread_pool,
-    std::string_view username,
-    std::string_view password)
-{
-    Fireland::Database::Auth::AuthWrapper db(thread_pool.Get());
-    db.start();
-
-    if (!co_await db.ping())
-    {
-        FL_LOG_ERROR("AuthServer", "Cannot connect to database.");
-        db.stop();
-        thread_pool.Stop();
-        co_return;
-    }
-
-    // Calcul SRP6 : génère sel aléatoire + vérificateur
-    Fireland::Crypto::SRP6 srp;
-    srp.ComputeVerifier(username, password);
-
-    auto saltBytes     = srp.GetSalt().AsByteArray(32);
-    auto verifierBytes = srp.GetVerifier().AsByteArray(32);
-
-    account acc{};
-    acc.username  = std::string(username);
-    acc.salt      = std::vector<uint8_t>(saltBytes.begin(), saltBytes.end());
-    acc.verifier  = std::vector<uint8_t>(verifierBytes.begin(), verifierBytes.end());
-    acc.expansion = 3; // Cataclysm
-
-    auto result = co_await db.Create(acc);
-    if (result)
-        FL_LOG_INFO("AuthServer", "Account '{}' created (id={}).", result->username, result->id);
-    else
-        FL_LOG_ERROR("AuthServer", "Failed to create account '{}' (already exists?).", username);
-
-    db.stop();
-    thread_pool.Stop();
-}
-
 Fireland::Utils::Async::async<void> async_main(Fireland::Utils::IoContext& thread_pool)
 {
-    constexpr const char* BIND_ADDRESS = "0.0.0.0";
-    constexpr uint16_t    BIND_PORT = 3724;
-
-    Fireland::Database::Auth::AuthWrapper dbPool(thread_pool.Get());
+    Fireland::Database::connection_pool_wrapper_options dbOptions{
+       sConfig.get<std::string>(DATABASE_USER),
+       sConfig.get<std::string>(DATABASE_PASSWORD),
+       sConfig.get<std::string>(DATABASE_AUTH),
+       sConfig.get<std::string>(DATABASE_HOST),
+       sConfig.get<uint16_t>(DATABASE_PORT)
+    };
+    Fireland::Database::Auth::AuthWrapper dbPool(thread_pool.Get(), std::move(dbOptions));
     dbPool.start();
     if (!co_await dbPool.ping())
     {
@@ -101,6 +64,8 @@ Fireland::Utils::Async::async<void> async_main(Fireland::Utils::IoContext& threa
     });
 
     FL_LOG_INFO("AuthServer", "Running. Press Ctrl+C to stop.");
+    const std::string BIND_ADDRESS = sConfig.get<std::string>(SERVER_SERVER_IP);
+    const uint16_t BIND_PORT = sConfig.get<uint16_t>(SERVER_SERVER_PORT);
     co_await listener.Listen(BIND_ADDRESS, BIND_PORT);
 
     signals.cancel();
@@ -111,24 +76,40 @@ Fireland::Utils::Async::async<void> async_main(Fireland::Utils::IoContext& threa
 
 int main(int argc, char* argv[])
 {
-    constexpr std::size_t THREAD_COUNT = 2;
+#if defined(_WIN32)
+    SetConsoleOutputCP(CP_UTF8);
+#endif
 
     Fireland::Utils::ProgramOptions opts("authserver", "0.1.0", "authserver.conf");
     if (!opts.Parse(argc, argv))
         return opts.ExitCode();
 
-    std::string configFile = opts.ConfigFile();
-    FL_LOG_INFO("AuthServer", "Using config file: {}", configFile);
-    Fireland::Utils::Log::Init(configFile);
-    if (opts.Quiet()) Fireland::Utils::Log::SetConsoleEnabled(false);
-
-    std::cout << "========================================\n"
-              << "  Fireland Auth Server\n"
-              << "  Account: TEST / TEST\n"
-              << "========================================\n";
     try
     {
-        Fireland::Utils::IoContext ioContext(THREAD_COUNT);
+        sConfig.load(opts.ConfigFile());
+        FL_LOG_INFO("AuthServer", "Using config file: {}", opts.ConfigFile());
+        Fireland::Utils::Log::Init(opts.ConfigFile());
+        if (opts.Quiet()) Fireland::Utils::Log::SetConsoleEnabled(false);
+
+        // Fancy startup header
+        std::cout << "\n"
+            << "\033[1;31m"
+            << "========================================\n"
+            << "    █████╗ ██╗   ██╗████████╗██╗  ██╗    \n"
+            << "   ██╔══██╗██║   ██║╚══██╔══╝██║  ██║    \n"
+            << "   ███████║██║   ██║   ██║   ███████║    \n"
+            << "   ██╔══██║██║   ██║   ██║   ██╔══██║    \n"
+            << "   ██║  ██║╚██████╔╝   ██║   ██║  ██║    \n"
+            << "   ╚═╝  ╚═╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝    \n"
+            << "========================================\n"
+            << "\033[0m"
+            << "  Project: Fireland Auth Server\n"
+            << "  Version: 0.1.0\n"
+            << "  Config : " << opts.ConfigFile() << "\n"
+            << "  Threads: " << (sConfig.get<uint32_t>(SERVER_THREAD_COUNT) == 0 ? std::thread::hardware_concurrency() : sConfig.get<uint32_t>(SERVER_THREAD_COUNT)) << "\n"
+            << "========================================\n\n";
+
+        Fireland::Utils::IoContext ioContext(sConfig.get<uint32_t>(SERVER_THREAD_COUNT));
         boost::asio::co_spawn(ioContext.Get(), async_main(ioContext), boost::asio::detached);
         ioContext.Join();
         FL_LOG_INFO("AuthServer", "Shutdown complete.");

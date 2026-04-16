@@ -8,9 +8,8 @@
 using namespace Fireland::Utils;
 
 IoContext::IoContext(std::size_t threadCount)
-    : _pool(threadCount > 0 ? threadCount : 1)
+    : _pool(threadCount > 0 ? threadCount : std::thread::hardware_concurrency())
 {
-    FL_LOG_INFO("IoContext", "Running with {} thread(s)", threadCount > 0 ? threadCount : 1);
 }
 
 IoContext::~IoContext()

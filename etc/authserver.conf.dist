@@ -3,15 +3,18 @@
 # ============================================================================
 # Copy this file to authserver.conf and edit to your needs.
 
-[AuthServer]
-BindIP   = "0.0.0.0"
-BindPort = 3724
+#[WorldServer]
+server.BindIP		= "0.0.0.0"
+server.BindPort		= 3724
+# if set to 0, the server will use the number of CPU cores as thread count
+server.ThreadCount	= 2
 
-[Database]
-Host     = "127.0.0.1"
-Port     = 3306
-User     = "fireland"
-Database = "fireland_auth"
+#[Database]
+database.Host     = "127.0.0.1"
+database.Port     = 3306
+database.User     = "root"
+database.Password = "rootpassword"
+database.AuthDB   = "firelands_auth"
 
 ###################################################################################################
 #

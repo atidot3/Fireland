@@ -3,6 +3,7 @@
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/cancel_after.hpp>
 
+#include <Utils/NetUtils.h>
 #include <Utils/Log.h>
 
 using namespace Fireland::Database;
@@ -18,11 +19,10 @@ void connection_pool_wrapper::start(connection_pool_wrapper_options options) noe
     //already started
     if (_pool) return;
 
-    //auto ip_host = utils::net::ip_for(options.hostname);
-    std::string ip_host = "127.0.0.1";
-	FL_LOG_INFO("Database", "> Starting database connection pool... (database {}:{} / {} with user '{}')", ip_host, options.port, options.database, options.username);
+    auto ip_host = Fireland::Utils::Net::ip_for(options.hostname);
+	FL_LOG_INFO("Database", "> Starting database connection pool... (database {}:{} / {} with user '{}')", options.hostname, options.port, options.database, options.username);
 
-    auto max_co = 60;
+    auto max_co = 5;
 
     // -- pool options
     boost::mysql::pool_params param_opts;

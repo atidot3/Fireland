@@ -11,14 +11,20 @@ set(headers_files
     include/Utils/ByteBuffer.h
     include/Utils/Describe.hpp
     include/Utils/Filesystem.h
+    include/Utils/NetUtils.h
     include/Utils/IoContext.h
     include/Utils/Log.h
     include/Utils/ProgramOptions.h
     include/Utils/StringUtils.h
+
+    include/Utils/Configuration/Configuration.h
+    include/Utils/Configuration/Configuration_defs.hpp
 )
 
 set(sources_files
+  src/Configuration.cpp
   src/Filesystem.cpp
+  src/NetUtils.cpp
   src/IoContext.cpp
   src/Log.cpp
 )
