@@ -15,10 +15,27 @@
 
 #include <boost/asio/ip/tcp.hpp>
 
+#include <Utils/Describe.hpp>
 #include <Network/Auth/AuthPacket.hpp>
 #include <Utils/Async.hpp>
 #include <Crypto/SRP6.h>
 #include <Database/Auth/AuthWrapper.h>
+
+enum class AuthStatus
+{
+    LOGON_CHALLENGE,
+    LOGON_PROOF,
+    RECONNECT_PROOF,
+	WAIT_FOR_REALM_LIST,
+    CLOSED
+};
+BOOST_DESCRIBE_ENUM(AuthStatus, LOGON_CHALLENGE, LOGON_PROOF, RECONNECT_PROOF, WAIT_FOR_REALM_LIST, CLOSED)
+
+struct AuthHandler
+{
+    AuthStatus status;
+    std::function<Fireland::Utils::Async::async<void>(Fireland::Auth::AuthPacket)> handler;
+};
 
 namespace Fireland::Auth
 {
@@ -40,9 +57,11 @@ namespace Fireland::Auth
         Utils::Async::async<void> SendChallengeError(AuthResult error);
 
     private:
-        boost::asio::ip::tcp::socket            _socket;
-        Fireland::Database::Auth::AuthWrapper&  _dbPool;
-        std::string                             _remoteAddress;
+        boost::asio::ip::tcp::socket                _socket;
+        Fireland::Database::Auth::AuthWrapper&      _dbPool;
+        AuthStatus                                  _status;
+        std::string                                 _remoteAddress;
+        std::unordered_map<AuthOpcode, AuthHandler> _handlers;
 
         Crypto::SRP6 _srp;
         std::string  _username;

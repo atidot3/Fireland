@@ -32,7 +32,9 @@ using ByteBuffer = Fireland::Utils::ByteBuffer;
 AuthSession::AuthSession(boost::asio::ip::tcp::socket socket, Fireland::Database::Auth::AuthWrapper& dbPool) noexcept
     : _socket{std::move(socket)}
     , _dbPool{dbPool}
+	, _status{ AuthStatus::LOGON_CHALLENGE }
     , _remoteAddress{"<unknown>"}
+    , _handlers{}
     , _srp{}
     , _username{}
     , _accountId{0}
@@ -44,6 +46,12 @@ AuthSession::AuthSession(boost::asio::ip::tcp::socket socket, Fireland::Database
         _remoteAddress = std::format("{}:{}", ep.address().to_string(), ep.port());
     else
         _remoteAddress = "<unknown>";
+
+    _handlers[AuthOpcode::CMD_AUTH_LOGON_CHALLENGE] = {AuthStatus::LOGON_CHALLENGE, [this](AuthPacket packet) { return HandleLogonChallenge(std::move(packet)); }};
+	_handlers[AuthOpcode::CMD_AUTH_LOGON_PROOF] = { AuthStatus::LOGON_PROOF, [this](AuthPacket packet) { return HandleLogonProof(std::move(packet)); } };
+	//_handlers[AuthOpcode::CMD_AUTH_RECONNECT_CHALLENGE] = { AuthStatus::LOGON_CHALLENGE, [this](AuthPacket packet) { return HandleReconnectChallenge(std::move(packet)); } };
+	_handlers[AuthOpcode::CMD_AUTH_RECONNECT_PROOF] = { AuthStatus::RECONNECT_PROOF, [this](AuthPacket packet) { return HandleReconnectProof(std::move(packet)); } };
+	_handlers[AuthOpcode::CMD_REALM_LIST] = { AuthStatus::WAIT_FOR_REALM_LIST, [this](AuthPacket packet) { return HandleRealmList(std::move(packet)); } };
 }
 
 AuthSession::~AuthSession() noexcept
@@ -89,32 +97,18 @@ async<void> AuthSession::Run()
                 co_return;
             }
 
-            switch (opcode)
+			auto handlerIt = _handlers.find(opcode);
+			if (handlerIt == _handlers.end())
             {
-                case AuthOpcode::CMD_AUTH_LOGON_CHALLENGE:
-                    co_await HandleLogonChallenge(std::move(packet));
-                    break;
-
-                case AuthOpcode::CMD_AUTH_LOGON_PROOF:
-                    co_await HandleLogonProof(std::move(packet));
-                    break;
-
-                case AuthOpcode::CMD_AUTH_RECONNECT_CHALLENGE:
-                    co_await HandleReconnectChallenge(std::move(packet));
-                    break;
-
-                case AuthOpcode::CMD_AUTH_RECONNECT_PROOF:
-                    co_await HandleReconnectProof(std::move(packet));
-                    break;
-
-                case AuthOpcode::CMD_REALM_LIST:
-                    co_await HandleRealmList(std::move(packet));
-                    break;
-
-                default:
-                    FL_LOG_WARNING("AuthSession", "[{}] Unknown opcode 0x{:02x}", _remoteAddress, uint8_t(opcode));
-                    co_return;
+                FL_LOG_WARNING("AuthSession", "[{}] No handler for opcode {} (0x{:02X})", _remoteAddress, Utils::Describe::to_string(opcode), uint8_t(opcode));
+                co_return;
+			}
+			if (_status != handlerIt->second.status)
+            {
+                FL_LOG_WARNING("AuthSession", "[{}] Received opcode {} (0x{:02X}) in invalid state (current: {}, required: {})", _remoteAddress, Utils::Describe::to_string(opcode), uint8_t(opcode), Utils::Describe::to_string(_status), Utils::Describe::to_string(handlerIt->second.status));
+                co_return;
             }
+            co_await handlerIt->second.handler(std::move(packet));
         }
     }
     catch (const boost::system::system_error& e)
@@ -190,6 +184,7 @@ async<void> AuthSession::HandleLogonChallenge(AuthPacket packet)
     FL_LOG_DEBUG("AuthSession", "[{}] Sending challenge response ({} bytes)", _remoteAddress, response.Size());
     FL_LOG_TRACE("AuthSession", "[{}] Challenge response: {}", _remoteAddress, StringUtils::HexStr(response.Data()));
 
+	_status = AuthStatus::LOGON_PROOF;
     co_await boost::asio::async_write(_socket, boost::asio::buffer(response.Storage()), boost::asio::use_awaitable);
     FL_LOG_DEBUG("AuthSession", "[{}] Challenge response sent, waiting for proof...", _remoteAddress);
 }
@@ -221,9 +216,8 @@ async<void> AuthSession::HandleLogonProof(AuthPacket packet)
         fail << AuthOpcode::CMD_AUTH_LOGON_PROOF
              << AuthResult::FAIL_INCORRECT_PASSWORD
              << uint8_t(0x03) << uint8_t(0x00);
-        co_await boost::asio::async_write(
-            _socket, boost::asio::buffer(fail.Storage()),
-            boost::asio::use_awaitable);
+
+        co_await boost::asio::async_write(_socket, boost::asio::buffer(fail.Storage()), boost::asio::use_awaitable);
         co_return;
     }
 
@@ -246,9 +240,8 @@ async<void> AuthSession::HandleLogonProof(AuthPacket packet)
     FL_LOG_TRACE("AuthSession", "[{}] Proof response: {}",
         _remoteAddress, StringUtils::HexStr(response.Data()));
 
-    co_await boost::asio::async_write(
-        _socket, boost::asio::buffer(response.Storage()),
-        boost::asio::use_awaitable);
+	_status = AuthStatus::WAIT_FOR_REALM_LIST;
+    co_await boost::asio::async_write(_socket, boost::asio::buffer(response.Storage()), boost::asio::use_awaitable);
 
     FL_LOG_DEBUG("AuthSession", "[{}] Proof response sent, waiting for realm list request...", _remoteAddress);
 }
@@ -313,9 +306,7 @@ async<void> AuthSession::HandleReconnectChallenge(AuthPacket packet)
     response.Append(_reconnectRand.data(), _reconnectRand.size());
     response.Pad(16);  // 16 zero bytes
 
-    co_await boost::asio::async_write(
-        _socket, boost::asio::buffer(response.Storage()),
-        boost::asio::use_awaitable);
+    co_await boost::asio::async_write(_socket, boost::asio::buffer(response.Storage()), boost::asio::use_awaitable);
 
     FL_LOG_DEBUG("AuthSession", "[{}] Reconnect challenge sent, waiting for reconnect proof...", _remoteAddress);
 }
@@ -388,9 +379,8 @@ async<void> AuthSession::HandleReconnectProof(AuthPacket packet)
              << AuthResult::SUCCESS;
     response.Pad(2);
 
-    co_await boost::asio::async_write(
-        _socket, boost::asio::buffer(response.Storage()),
-        boost::asio::use_awaitable);
+	_status = AuthStatus::WAIT_FOR_REALM_LIST;
+    co_await boost::asio::async_write(_socket, boost::asio::buffer(response.Storage()), boost::asio::use_awaitable);
 
     FL_LOG_DEBUG("AuthSession", "[{}] Reconnect proof accepted, waiting for realm list...", _remoteAddress);
 }
