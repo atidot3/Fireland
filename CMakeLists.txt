@@ -40,6 +40,7 @@ include(cmake/Macros.cmake)
 # ----------------------------------------------------------------------------
 add_subdirectory(3rdParty)
 add_subdirectory(src)
+add_subdirectory(tests)
 
 # ----------------------------------------------------------------------------
 # IDE: put CMake utility targets in a CMake/ folder
