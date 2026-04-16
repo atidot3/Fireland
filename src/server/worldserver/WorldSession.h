@@ -23,7 +23,7 @@
 #include <Database/Auth/AuthWrapper.h>
 
 #include <Utils/Async.hpp>
-#include <Utils/Bytes/ByteBuffer.h>
+#include <Utils/ByteBuffer.h>
 
 #include "WorldOpcode.h"
 #include "WorldPacket.h"

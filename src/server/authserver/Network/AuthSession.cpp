@@ -17,11 +17,12 @@
 
 #include <Utils/Log.h>
 #include <Utils/StringUtils.h>
-#include <Utils/Bytes/ByteBuffer.h>
+#include <Utils/ByteBuffer.h>
 
 using namespace Fireland::Auth;
 using namespace Fireland::Utils::Async;
 using namespace Fireland::Utils;
+using ByteBuffer = Fireland::Utils::ByteBuffer;
 
 // ---- Construction ----------------------------------------------------------
 

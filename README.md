@@ -21,57 +21,90 @@
 
 ## Overview
 
-**Fireland** is a modern WoW Cataclysm (4.3.4) server emulator written from scratch in **C++23**, leveraging **Boost.Asio** with C++20 coroutines for high-performance asynchronous networking.
+**Fireland** is a modern WoW Cataclysm (4.3.4 / build 15595) server emulator written from scratch in **C++23**, leveraging **Boost.Asio** with C++20 coroutines for high-performance asynchronous networking.
 
 ### Key features
 
 - ⚡ **Coroutine-based networking** — `co_await` everywhere, no callback spaghetti
-- 🔐 **SRP6 authentication** — full challenge → proof → realm list flow (Boost.Multiprecision + Boost.UUID SHA1)
+- 🔐 **SRP6 authentication** — full challenge → proof → realm list flow
+- 🌐 **World server protocol** — complete Cataclysm handshake up to character selection
+- 🔒 **ARC4-drop1024 header encryption** — per-direction streams keyed via HMAC-SHA1
+- 🧩 **Bit-packed packet serialisation** — `WriteBit` / `WriteBits` / `FlushBits` matching the Cata 4.x wire format
 - 🎨 **Configurable coloured logging** — per-component filtering, console + file appenders, TrinityCore-style `.conf` files
-- 🧩 **Modular architecture** — `Utils`, `Crypto`, `Network`, `AuthServer`, `WorldServer` as separate CMake targets
+- 🏗️ **Modular architecture** — `Utils`, `Crypto`, `Database`, `Network`, `AuthServer`, `WorldServer` as separate CMake targets
 - 🔧 **Zero manual dependency management** — Boost is fetched automatically via CMake `FetchContent`
-- 🖥️ **Cross-platform** — Windows (MSVC), Linux (GCC/Clang), macOS (Apple Clang)
+- 🖥️ **Cross-platform** — Windows (MSVC), Linux (GCC/Clang)
 
 ## Project structure
 
 ```
 Fireland/
-├── CMakeLists.txt              # Root build configuration
+├── CMakeLists.txt
 ├── cmake/
-│   ├── Platform.cmake          # OS/arch detection
-│   ├── CompilerOptions.cmake   # Warning levels, sanitizers
-│   └── Macros.cmake            # Utility macros
-├── 3rdParty/
-│   └── boost/                  # Boost FetchContent (auto-downloaded)
+│   ├── Platform.cmake
+│   ├── CompilerOptions.cmake
+│   └── Macros.cmake
 ├── etc/
-│   ├── authserver.conf.dist    # Auth server config template
-│   └── worldserver.conf.dist   # World server config template
+│   ├── authserver.conf.dist
+│   └── worldserver.conf.dist
 └── src/
     ├── common/
-    │   ├── Crypto/             # Cryptography primitives
-    │   │   ├── BigNumber.h/cpp # boost::multiprecision::cpp_int wrapper
-    │   │   ├── SHA1.h          # SHA-1 digest (boost::uuids::detail::sha1)
-    │   │   └── SRP6.h/cpp      # SRP-6 authentication protocol
-    │   ├── Utils/              # Shared utilities
-    │   │   ├── Async.hpp       # awaitable<T> alias, async_sleep
-    │   │   ├── ByteBuffer.h/cpp# Binary serialisation buffer
-    │   │   ├── Describe.hpp    # Compile-time type description helpers
-    │   │   ├── IoContext.h/cpp # Boost.Asio thread pool wrapper
-    │   │   ├── Log.h/cpp       # Configurable logging system
-    │   │   ├── ProgramOptions.h# CLI argument parsing (--config, --quiet, --help)
-    │   │   └── StringUtils.h   # Trim, split, case-convert
-    │   └── Network/            # Async TCP networking library
-    │       ├── IoContext.h/cpp  # Network-specific io_context
-    │       ├── TcpListener.h   # Coroutine accept loop (header-only, templated)
-    │       ├── TcpSession.h/cpp    # Per-connection read/write coroutines
-    │       ├── SessionManager.h/cpp# Thread-safe session tracking (strand-based)
-    │       └── PacketBuffer.h/cpp  # WoW packet framing (opcode + payload)
+    │   ├── Crypto/
+    │   │   ├── include/Crypto/
+    │   │   │   ├── ARC4.h          # ARC4 stream cipher
+    │   │   │   ├── BigNumber.h     # boost::multiprecision::cpp_int wrapper
+    │   │   │   ├── HMAC.h          # HMAC-SHA1 (Boost.UUID backend)
+    │   │   │   ├── SHA1.h          # SHA-1 digest
+    │   │   │   ├── SRP6.h          # SRP-6 authentication protocol
+    │   │   │   └── WorldCrypt.h    # ARC4-drop1024 world packet header cipher
+    │   │   └── src/
+    │   │       ├── BigNumber.cpp
+    │   │       └── SRP6.cpp
+    │   ├── Database/
+    │   │   ├── include/Database/
+    │   │   │   ├── Auth/AuthWrapper.h       # Async auth DB operations
+    │   │   │   └── connection_pool_wrapper.h
+    │   │   └── src/
+    │   │       ├── Auth/AuthWrapper.cpp
+    │   │       └── connection_pool_wrapper.cpp
+    │   ├── Network/
+    │   │   ├── include/Network/
+    │   │   │   ├── PacketBuffer.h   # Simple header+payload framing
+    │   │   │   ├── SessionManager.h # Thread-safe session tracking (strand)
+    │   │   │   ├── TcpListener.h    # Coroutine accept loop (header-only)
+    │   │   │   └── TcpSession.h     # Per-connection read/write coroutines
+    │   │   └── src/
+    │   │       ├── PacketBuffer.cpp
+    │   │       ├── SessionManager.cpp
+    │   │       └── TcpSession.cpp
+    │   └── Utils/
+    │       ├── include/Utils/
+    │       │   ├── Async.hpp        # awaitable<T> alias, async_sleep
+    │       │   ├── ByteBuffer.h     # Binary serialisation buffer (bit I/O included)
+    │       │   ├── Describe.hpp     # Boost.Describe helpers
+    │       │   ├── Filesystem.h
+    │       │   ├── IoContext.h      # Boost.Asio thread pool wrapper
+    │       │   ├── Log.h            # Configurable logging system
+    │       │   ├── ProgramOptions.h # CLI argument parsing
+    │       │   └── StringUtils.h
+    │       └── src/
+    │           ├── Filesystem.cpp
+    │           ├── IoContext.cpp
+    │           └── Log.cpp
     └── server/
-        ├── authserver/         # Authentication server (port 3724)
-        │   ├── AuthOpcode.h    # Auth protocol opcodes & packet structures
-        │   ├── AuthSession.h/cpp # SRP6 auth flow (challenge → proof → realm list)
+        ├── authserver/             # Authentication server (port 3724)
+        │   ├── Network/
+        │   │   ├── AuthOpcode.h    # Auth protocol opcodes & wire structures
+        │   │   ├── AuthPacket.hpp  # Typed ByteBuffer for auth packets
+        │   │   ├── AuthSession.h
+        │   │   └── AuthSession.cpp # SRP6 auth flow (challenge → proof → realm list)
+        │   ├── Realm/Realm.h
         │   └── main.cpp
-        └── worldserver/        # World server (port 8085)
+        └── worldserver/            # World server (port 8085)
+            ├── WorldOpcode.h       # Cata 4.3.4 opcode table + AuthResponseResult
+            ├── WorldPacket.h       # Typed ByteBuffer for world packets (SMSG/CMSG)
+            ├── WorldSession.h
+            ├── WorldSession.cpp    # Full Cata handshake + post-auth packet loop
             └── main.cpp
 ```
 
@@ -82,6 +115,7 @@ Fireland/
 | **CMake** | ≥ 3.20 | Build system |
 | **C++ compiler** | C++23 support | MSVC 19.40+, GCC 13+, Clang 17+ |
 | **Boost** | 1.90.0 | *Auto-downloaded* via FetchContent |
+| **MySQL / MariaDB** | Any recent | Auth database (credentials in `.conf`) |
 
 ### Boost components used
 
@@ -89,14 +123,11 @@ Fireland/
 |---|---|
 | `Boost.Asio` | Async I/O, TCP, coroutines, timers, signal handling |
 | `Boost.System` | Error codes |
-| `Boost.Log` | Logging backend (used by smoke test) |
-| `Boost.ProgramOptions` | CLI argument parsing (`--config`, `--quiet`, `--help`) |
-| `Boost.Regex` | Pattern matching |
-| `Boost.DateTime` | Time utilities |
-| `Boost.Coroutine` | Coroutine context switching |
-| `Boost.URL` | URL parsing |
-| `Boost.Charconv` | Fast number ↔ string conversion |
-| `Boost.Test` | Unit testing framework |
+| `Boost.Log` | Logging backend |
+| `Boost.ProgramOptions` | CLI argument parsing |
+| `Boost.Multiprecision` | Big-integer arithmetic for SRP6 |
+| `Boost.UUID` | SHA-1 implementation |
+| `Boost.Describe` | Compile-time enum-to-string for opcodes |
 
 > **Note**: You do **not** need to install Boost manually. CMake downloads and builds only the required components automatically on first configure.
 
@@ -125,7 +156,7 @@ Or open the folder directly in Visual Studio 2026 (CMake is detected automatical
 ```bash
 # Install dependencies
 sudo apt update
-sudo apt install -y build-essential cmake git
+sudo apt install -y build-essential cmake git libmysqlclient-dev
 
 # Clone & build
 git clone https://github.com/atidot3/Fireland.git
@@ -133,10 +164,6 @@ cd Fireland
 cmake -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build -j$(nproc)
 ```
-
-### Other platforms
-
-The project targets standard C++23 and should build on any system with CMake ≥ 3.20 and a conforming compiler (GCC 13+, Clang 17+, Apple Clang 16+), though only the two platforms above are actively tested.
 
 ### CMake options
 
@@ -146,7 +173,7 @@ The project targets standard C++23 and should build on any system with CMake ≥
 
 ## Configuration
 
-Copy the `.dist` template and edit to your needs:
+Copy the `.dist` templates and edit to your needs:
 
 ```bash
 cp etc/authserver.conf.dist authserver.conf
@@ -169,17 +196,16 @@ Appender.Auth    = 2,5,15,Auth.log,w
 # Logger.<name> = <LogLevel>,<Appender1> [<Appender2> ...]
 Logger.root           = 4,Console
 Logger.AuthServer     = 5,Console Auth
-Logger.TcpListener    = 4,Console
-#Logger.SessionManager = 5,Console    # ← commented = falls back to root
+Logger.WorldSession   = 5,Console
 ```
 
 ## Usage
 
 ```bash
-# Auth server
+# Auth server (port 3724)
 ./authserver --config authserver.conf
 
-# World server
+# World server (port 8085)
 ./worldserver --config worldserver.conf
 
 # CLI options
@@ -195,57 +221,74 @@ Logger.TcpListener    = 4,Console
 
 The auth server implements the full SRP-6 handshake as a single coroutine per client:
 
-```cpp
-async<void> AuthSession::Run()
-{
-    auto self = shared_from_this(); // prevent premature destruction
-    while (_socket.is_open())
-    {
-        uint8_t cmd = co_await ReadOpcode();
-        switch (static_cast<AuthOpcode>(cmd))
-        {
-            case AuthOpcode::CMD_AUTH_LOGON_CHALLENGE: co_await HandleLogonChallenge(); break;
-            case AuthOpcode::CMD_AUTH_LOGON_PROOF:     co_await HandleLogonProof();     break;
-            case AuthOpcode::CMD_REALM_LIST:           co_await HandleRealmList();      break;
-        }
-    }
-}
+```
+CMD_AUTH_LOGON_CHALLENGE  →  server sends B, N, g, salt
+CMD_AUTH_LOGON_PROOF      →  client sends A, M1 — server verifies, sends M2
+CMD_REALM_LIST            →  server sends realm list
 ```
 
-### Coroutine networking
+After a successful proof, the 40-byte SRP session key `K` is stored in the auth database and later retrieved by the world server to initialise packet encryption.
 
-All network I/O uses C++20 coroutines via Boost.Asio:
+### World server — Cataclysm 4.3.4 handshake
 
-```cpp
-boost::asio::awaitable<void> TcpSession::ReadLoop()
-{
-    while (IsOpen())
-    {
-        auto header = co_await ReadHeader();
-        auto packet = co_await ReadPayload(header);
-        _packetHandler(shared_from_this(), std::move(packet));
-    }
-}
+```
+TCP connect
+  ← ServerConnectionInit  ("WORLD OF WARCRAFT CONNECTION - SERVER TO CLIENT")
+  → ClientConnectionInit  ("WORLD OF WARCRAFT CONNECTION - CLIENT TO SERVER")
+  ← SMSG_AUTH_CHALLENGE   (server seed + 8×uint32 DOS seeds)
+  → CMSG_AUTH_SESSION     (build, account, client seed, digest=SHA1(account,0,clientSeed,serverSeed,K))
+  ← SMSG_AUTH_RESPONSE    (AUTH_OK + expansion info)  ← ARC4 encryption starts here
+  ← SMSG_ADDON_INFO
+  ← SMSG_CLIENTCACHE_VERSION
+  ← SMSG_TUTORIAL_FLAGS
+  → CMSG_READY_FOR_ACCOUNT_DATA_TIMES
+  ← SMSG_ACCOUNT_DATA_TIMES
+  → CMSG_REALM_SPLIT / CMSG_CHAR_ENUM / …
+  ← SMSG_CHAR_ENUM        (character list)
 ```
 
-### Strand-based thread safety
+### ARC4-drop1024 packet encryption
 
-`SessionManager` uses a Boost.Asio strand to serialise all session map access without mutexes:
+All world packet **headers** are encrypted after `SMSG_AUTH_RESPONSE`. Two independent ARC4 streams are used:
+
+```
+encKey = HMAC-SHA1(key = kServerEncryptSeed,  data = SessionKey K)
+decKey = HMAC-SHA1(key = kClientDecryptSeed,  data = SessionKey K)
+```
+
+Each stream discards its first 1024 keystream bytes (ARC4-drop1024) before use. Header sizes:
+- `SMSG` (server → client): 4 bytes `[uint16 size BE | uint16 opcode LE]`
+- `CMSG` (client → server): 6 bytes `[uint16 size BE | uint32 opcode LE]`
+
+### Bit-packed packet serialisation
+
+Cataclysm 4.x uses a compact bit-stream format for many packets. `ByteBuffer` exposes:
 
 ```cpp
-void SessionManager::Add(TcpSession::Ptr session)
-{
-    boost::asio::post(_strand, [this, session = std::move(session)]() mutable {
-        _sessions[session->GetId()] = std::move(session);
-    });
-}
+void WriteBit(uint32_t bit);          // write 1 bit (MSB-first within each byte)
+void WriteBits(uint32_t value, uint32_t bits);
+void FlushBits();                     // zero-pad to next byte boundary
+
+bool    ReadBit();
+uint32_t ReadBits(uint32_t n);
+```
+
+Example — `SMSG_CHAR_ENUM` empty character list:
+```cpp
+WorldPacket data(SMSG_CHAR_ENUM);
+data.WriteBits(0, 23);   // FactionChangeRestrictions count
+data.WriteBit(true);     // Success
+data.WriteBits(0, 17);   // Characters count
+data.FlushBits();
+co_await SendPacket(data);
 ```
 
 ### Typed logging with std::format
 
 ```cpp
-FL_LOG_INFO("TcpListener", "Listening on {}:{}", address, port);
-FL_LOG_ERROR("TcpSession", "Session #{} read error: {}", _id, e.what());
+FL_LOG_INFO("WorldSession", "Client {} authenticated as '{}'", _remoteAddress, _username);
+FL_LOG_ERROR("WorldSession", "CMSG_AUTH_SESSION digest mismatch for '{}'", _username);
+FL_LOG_TRACE("WorldSession", "SMSG_AUTH_CHALLENGE seed = 0x{:08X}", _serverSeed);
 ```
 
 ## License

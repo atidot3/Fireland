@@ -12,13 +12,14 @@
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
 
-#include <Utils/Bytes/ByteBuffer.h>
+#include <Utils/ByteBuffer.h>
 #include <Utils/Log.h>
 #include <Utils/StringUtils.h>
 
 using namespace Fireland::World;
 using namespace Fireland::Utils;
 using namespace Fireland::Utils::Async;
+using ByteBuffer = Fireland::Utils::ByteBuffer;
 
 // ---- Construction ----------------------------------------------------------
 

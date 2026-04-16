@@ -8,8 +8,7 @@
 
 set(headers_files
     include/Utils/Async.hpp
-    include/Utils/Bytes/ByteBuffer.h
-    include/Utils/Bytes/ByteHelper.hpp
+    include/Utils/ByteBuffer.h
     include/Utils/Describe.hpp
     include/Utils/Filesystem.h
     include/Utils/IoContext.h
@@ -19,7 +18,6 @@ set(headers_files
 )
 
 set(sources_files
-  src/ByteBuffer.cpp
   src/Filesystem.cpp
   src/IoContext.cpp
   src/Log.cpp
