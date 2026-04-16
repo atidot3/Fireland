@@ -7,6 +7,7 @@ add_executable(fireland_utils_tests
   test_utils_describe.cpp
   test_string_utils.cpp
   test_bytebuffer.cpp
+  test_Configuration.cpp
 )
 
 target_link_libraries(fireland_utils_tests
