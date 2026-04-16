@@ -15,6 +15,7 @@ cmake-build-*/
 *.sln.docstates
 CMakeSettings.json
 CMakePresets.json
+.idea/
 
 # --- CMake generated ---
 CMakeCache.txt
