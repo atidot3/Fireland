@@ -84,9 +84,9 @@ int main(int argc, char* argv[])
 
     try
     {
-		sConfig.load(opts.ConfigFile());
         Fireland::Utils::Log::Init(opts.ConfigFile());
         if (opts.Quiet()) Fireland::Utils::Log::SetConsoleEnabled(false);
+        sConfig.load(opts.ConfigFile());
 
         // Fancy startup header
         std::cout << "\n"

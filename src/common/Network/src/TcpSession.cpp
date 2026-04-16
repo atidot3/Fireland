@@ -46,7 +46,7 @@ TcpSession::TcpSession(boost::asio::ip::tcp::socket socket,
 
 TcpSession::~TcpSession()
 {
-    FL_LOG_DEBUG("TcpSession", "Session #{} destroyed", _id);
+    FL_LOG_DEBUG("Network", "Session #{} destroyed", _id);
 }
 
 // --------------------------------------------------------------------------
@@ -54,7 +54,7 @@ TcpSession::~TcpSession()
 // --------------------------------------------------------------------------
 void TcpSession::Start()
 {
-    FL_LOG_INFO("TcpSession", "Session #{} connected from {}", _id, _remoteAddress);
+    FL_LOG_INFO("Network", "Session #{} connected from {}", _id, _remoteAddress);
 
     auto self = shared_from_this();
 
@@ -92,7 +92,7 @@ void TcpSession::Close()
     if (_onClose)
         _onClose(shared_from_this());
 
-    FL_LOG_INFO("TcpSession", "Session #{} closed ({})", _id, _remoteAddress);
+    FL_LOG_INFO("Network", "Session #{} closed ({})", _id, _remoteAddress);
 }
 
 bool TcpSession::IsOpen() const noexcept
@@ -121,7 +121,7 @@ async<void> TcpSession::ReadLoop()
 
             if (header.size < sizeof(uint16_t))
             {
-                FL_LOG_WARNING("TcpSession", "Session #{} invalid packet size {}", _id, header.size);
+                FL_LOG_WARNING("Network", "Session #{} invalid packet size {}", _id, header.size);
                 break;
             }
 
@@ -133,7 +133,7 @@ async<void> TcpSession::ReadLoop()
                 constexpr std::size_t MAX_PAYLOAD = 64 * 1024;
                 if (payloadSize > MAX_PAYLOAD)
                 {
-                    FL_LOG_WARNING("TcpSession", "Session #{} payload too large ({} bytes), disconnecting",
+                    FL_LOG_WARNING("Network", "Session #{} payload too large ({} bytes), disconnecting",
                         _id, payloadSize);
                     break;
                 }
@@ -155,7 +155,7 @@ async<void> TcpSession::ReadLoop()
         if (e.code() != boost::asio::error::eof &&
             e.code() != boost::asio::error::operation_aborted)
         {
-            FL_LOG_ERROR("TcpSession", "Session #{} read error: {}", _id, e.what());
+            FL_LOG_ERROR("Network", "Session #{} read error: {}", _id, e.what());
         }
     }
 
@@ -195,6 +195,6 @@ async<void> TcpSession::WriteLoop()
     catch (const boost::system::system_error& e)
     {
         if (e.code() != boost::asio::error::operation_aborted)
-            FL_LOG_ERROR("TcpSession", "Session #{} write error: {}", _id, e.what());
+            FL_LOG_ERROR("Network", "Session #{} write error: {}", _id, e.what());
     }
 }

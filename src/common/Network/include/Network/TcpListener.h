@@ -51,17 +51,17 @@ namespace Fireland::Network
             _acceptor.bind(endpoint, ec);
             if (ec)
             {
-                FL_LOG_ERROR("TcpListener", "Failed to bind to {}:{} — {}", address, port, ec.message());
+                FL_LOG_ERROR("Network", "Failed to bind to {}:{} — {}", address, port, ec.message());
                 co_return;
             }
             _acceptor.listen(boost::asio::socket_base::max_listen_connections, ec);
             if (ec)
             {
-                FL_LOG_ERROR("TcpListener", "Failed to listen on {}:{} — {}", address, port, ec.message());
+                FL_LOG_ERROR("Network", "Failed to listen on {}:{} — {}", address, port, ec.message());
                 co_return;
             }
 
-            FL_LOG_INFO("TcpListener", "Listening on {}:{}", address, port);
+            FL_LOG_INFO("Network", "Listening on {}:{}", address, port);
             co_await AcceptLoop();
         }
 
@@ -69,7 +69,7 @@ namespace Fireland::Network
         {
             boost::system::error_code ec;
             _acceptor.close(ec);
-            FL_LOG_INFO("TcpListener", "Stopped");
+            FL_LOG_INFO("Network", "Stopped");
         }
 
     private:
@@ -93,11 +93,11 @@ namespace Fireland::Network
                     if (e.code() == boost::asio::error::operation_aborted)
                         break;
 
-                    FL_LOG_ERROR("TcpListener", "Accept error: {}", e.what());
+                    FL_LOG_ERROR("Network", "Accept error: {}", e.what());
                 }
                 catch (const std::exception& e)
                 {
-                    FL_LOG_ERROR("TcpListener", "Exception in accept loop: {}", e.what());
+                    FL_LOG_ERROR("Network", "Exception in accept loop: {}", e.what());
                     break;
                 }
             }

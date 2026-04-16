@@ -1,4 +1,5 @@
 #include <Utils/Configuration/Configuration.h>
+#include <Utils/Log.h>
 #include <fstream>
 
 using namespace Fireland::Utils;
@@ -32,6 +33,7 @@ bool Configuration::load(const std::string& filename)
             removeQuotes(value);
 
             _values[key] = value;
+			FL_LOG_DEBUG("Configuration", "Loaded config: {} = {}", key, value);
         }
 
         return true;

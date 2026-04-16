@@ -8,7 +8,7 @@
 //   Fireland::Utils::Log::Init();                       // defaults: console, INFO
 //
 // Usage (std::format syntax — first argument is the logger tag):
-//   FL_LOG_INFO("TcpListener", "Listening on {}:{}", addr, port);
+//   FL_LOG_INFO("Network", "Listening on {}:{}", addr, port);
 //   FL_LOG_ERROR("AuthServer", "Login failed for user {}", username);
 //
 // Config file format (inspired by TrinityCore):
