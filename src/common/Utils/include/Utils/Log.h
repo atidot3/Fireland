@@ -27,6 +27,8 @@
 #include <string_view>
 #include <utility>
 
+#include <boost/asio/any_io_executor.hpp>
+
 #include <Utils/Describe.hpp>
 
 namespace Fireland::Utils::Log
@@ -51,6 +53,10 @@ namespace Fireland::Utils::Log
 
     /// Initialise with a default console appender at the given level.
     void Init(Level defaultLevel = Level::Info);
+
+    /// Provide an executor — all I/O will be serialized through a strand.
+    /// Call once, after IoContext is created, before worker threads start writing.
+    void SetExecutor(boost::asio::any_io_executor exec);
 
     /// Check if a logger would accept a message at the given level.
     bool ShouldLog(std::string_view logger, Level level);

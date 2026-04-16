@@ -9,6 +9,12 @@ set(headers_files
   include/Network/SessionManager.h
   include/Network/TcpListener.h
   include/Network/TcpSession.h
+
+  include/Network/Auth/AuthOpcode.hpp
+  include/Network/Auth/AuthPacket.hpp
+
+  include/Network/World/WorldOpcode.hpp
+  include/Network/World/WorldPacket.hpp
 )
 
 set(sources_files

@@ -3,7 +3,7 @@
 #include <Utils/ByteBuffer.h>
 #include <Utils/Describe.hpp>
 
-#include "AuthOpcode.h"
+#include <Network/Auth/AuthOpcode.hpp>
 
 namespace Fireland::Auth
 {

@@ -3,8 +3,6 @@
 # ============================================================================
 
 set(headers_files
-    WorldOpcode.h
-    WorldPacket.h
     WorldSession.h
 )
 

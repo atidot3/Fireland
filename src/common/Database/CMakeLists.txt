@@ -6,11 +6,13 @@
 
 set(headers_files
   include/Database/connection_pool_wrapper.h
+  
   include/Database/Auth/AuthWrapper.h
 )
 
 set(sources_files
   src/connection_pool_wrapper.cpp
+
   src/Auth/AuthWrapper.cpp
 )
 
@@ -27,8 +29,9 @@ target_include_directories(fireland_database
 
 target_link_libraries(fireland_database
   PUBLIC
-    Boost::mysql
     fireland_utils   # brings Boost::asio, Boost::system, Boost::log, ws2_32, etc.
+    fireland_shared  # for shared data structures
+    Boost::mysql
 )
 
 # includes for internal use

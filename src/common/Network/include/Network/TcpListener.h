@@ -45,14 +45,24 @@ namespace Fireland::Network
             boost::asio::ip::tcp::endpoint endpoint(
                 boost::asio::ip::make_address(address), port);
 
-            _acceptor.open(endpoint.protocol());
+            boost::system::error_code ec;
+            _acceptor.open(endpoint.protocol(), ec);
             _acceptor.set_option(boost::asio::ip::tcp::acceptor::reuse_address(true));
-            _acceptor.bind(endpoint);
-            _acceptor.listen(boost::asio::socket_base::max_listen_connections);
+            _acceptor.bind(endpoint, ec);
+            if (ec)
+            {
+                FL_LOG_ERROR("TcpListener", "Failed to bind to {}:{} — {}", address, port, ec.message());
+                co_return;
+            }
+            _acceptor.listen(boost::asio::socket_base::max_listen_connections, ec);
+            if (ec)
+            {
+                FL_LOG_ERROR("TcpListener", "Failed to listen on {}:{} — {}", address, port, ec.message());
+                co_return;
+            }
 
             FL_LOG_INFO("TcpListener", "Listening on {}:{}", address, port);
-
-            return AcceptLoop();
+            co_await AcceptLoop();
         }
 
         void Stop()
@@ -69,7 +79,8 @@ namespace Fireland::Network
             {
                 try
                 {
-                    auto socket = co_await _acceptor.async_accept(boost::asio::use_awaitable);
+                    auto [ec, socket] = co_await _acceptor.async_accept(Utils::Async::tuple_awaitable_token);
+                    if (ec) break;
                     socket.set_option(boost::asio::ip::tcp::no_delay(true));
 
                     if (auto session = _factory(std::move(socket)))
@@ -84,7 +95,13 @@ namespace Fireland::Network
 
                     FL_LOG_ERROR("TcpListener", "Accept error: {}", e.what());
                 }
+                catch (const std::exception& e)
+                {
+                    FL_LOG_ERROR("TcpListener", "Exception in accept loop: {}", e.what());
+                    break;
+                }
             }
+            co_return;
         }
 
         SessionFactory                 _factory;

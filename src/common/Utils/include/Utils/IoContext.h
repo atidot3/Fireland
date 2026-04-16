@@ -5,12 +5,10 @@
 // ============================================================================
 
 #include <cstddef>
-#include <memory>
-#include <vector>
 #include <thread>
 
+#include <boost/asio/any_io_executor.hpp>
 #include <boost/asio/thread_pool.hpp>
-#include <boost/asio/signal_set.hpp>
 
 namespace Fireland::Utils
 {
@@ -23,17 +21,14 @@ namespace Fireland::Utils
         IoContext(const IoContext&) = delete;
         IoContext& operator=(const IoContext&) = delete;
 
-        /// Request a graceful stop. All pending coroutines will complete.
+        /// Request a graceful stop.
         void Stop();
 
         /// Block until all threads have joined.
         void Join();
 
-        /// Access the underlying io_context.
+        /// Access the underlying executor.
         [[nodiscard]] boost::asio::any_io_executor Get() noexcept { return _pool.get_executor(); }
-
-        /// Install SIGINT / SIGTERM handlers for graceful shutdown.
-        void InstallSignalHandlers();
 
     private:
         boost::asio::thread_pool _pool;

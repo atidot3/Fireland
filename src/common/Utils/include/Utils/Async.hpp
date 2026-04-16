@@ -5,6 +5,7 @@
 // ============================================================================
 
 #include <boost/asio/awaitable.hpp>
+#include <boost/asio/co_spawn.hpp>
 #include <boost/asio/use_awaitable.hpp>
 #include <boost/asio/as_tuple.hpp>
 #include <boost/asio/use_future.hpp>

@@ -11,6 +11,8 @@
 #include <iostream>
 #include <string>
 
+#include <boost/asio/signal_set.hpp>
+
 #include <Utils/Async.hpp>
 #include <Utils/Log.h>
 #include <Utils/ProgramOptions.h>
@@ -22,9 +24,10 @@
 #include <Crypto/SRP6.h>
 
 #include "Network/AuthSession.h"
+#include "Realm/Realm.h"
 
 // ---------------------------------------------------------------------------
-// CreateAccount — helper 
+// CreateAccount — helper
 // ---------------------------------------------------------------------------
 Fireland::Utils::Async::async<void> create_account(
     Fireland::Utils::IoContext& thread_pool,
@@ -37,8 +40,8 @@ Fireland::Utils::Async::async<void> create_account(
     if (!co_await db.ping())
     {
         FL_LOG_ERROR("AuthServer", "Cannot connect to database.");
-        thread_pool.Stop();
         db.stop();
+        thread_pool.Stop();
         co_return;
     }
 
@@ -61,8 +64,8 @@ Fireland::Utils::Async::async<void> create_account(
     else
         FL_LOG_ERROR("AuthServer", "Failed to create account '{}' (already exists?).", username);
 
-    thread_pool.Stop();
     db.stop();
+    thread_pool.Stop();
 }
 
 Fireland::Utils::Async::async<void> async_main(Fireland::Utils::IoContext& thread_pool)
@@ -75,22 +78,35 @@ Fireland::Utils::Async::async<void> async_main(Fireland::Utils::IoContext& threa
     if (!co_await dbPool.ping())
     {
         FL_LOG_ERROR("AuthServer", "Failed to connect to the database. Shutting down.");
-
-        thread_pool.Stop();
         dbPool.stop();
- 
+        thread_pool.Stop();
         co_return;
     }
-    
+
+    Realm::Init(thread_pool.Get(), dbPool);
+
     Fireland::Network::TcpListener<Fireland::Auth::AuthSession> listener(thread_pool, [&dbPool](boost::asio::ip::tcp::socket socket)
     {
         return std::make_shared<Fireland::Auth::AuthSession>(std::move(socket), dbPool);
     });
 
+    boost::asio::signal_set signals(thread_pool.Get(), SIGINT, SIGTERM);
+    signals.async_wait([&listener](const boost::system::error_code& ec, int signo)
+    {
+        if (!ec)
+        {
+            FL_LOG_INFO("AuthServer", "Received signal {}, shutting down", signo);
+            listener.Stop();
+        }
+    });
+
     FL_LOG_INFO("AuthServer", "Running. Press Ctrl+C to stop.");
     co_await listener.Listen(BIND_ADDRESS, BIND_PORT);
 
+    signals.cancel();
+    Realm::Shutdown();
     dbPool.stop();
+    thread_pool.Stop();
 }
 
 int main(int argc, char* argv[])
@@ -103,7 +119,6 @@ int main(int argc, char* argv[])
 
     std::string configFile = opts.ConfigFile();
     FL_LOG_INFO("AuthServer", "Using config file: {}", configFile);
-	// Log configuration
     Fireland::Utils::Log::Init(configFile);
     if (opts.Quiet()) Fireland::Utils::Log::SetConsoleEnabled(false);
 
@@ -113,13 +128,9 @@ int main(int argc, char* argv[])
               << "========================================\n";
     try
     {
-		// Initiate thread pool and signal handlers
         Fireland::Utils::IoContext ioContext(THREAD_COUNT);
-        ioContext.InstallSignalHandlers();
-
-		// Run the server asynchronously
+        Fireland::Utils::Log::SetExecutor(ioContext.Get());
         boost::asio::co_spawn(ioContext.Get(), async_main(ioContext), boost::asio::detached);
-
         ioContext.Join();
         FL_LOG_INFO("AuthServer", "Shutdown complete.");
     }

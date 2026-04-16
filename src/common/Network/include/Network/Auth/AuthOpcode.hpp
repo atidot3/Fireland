@@ -9,7 +9,6 @@
 #include <Utils/ByteBuffer.h>
 #include <Utils/Describe.hpp>
 
-
 namespace Fireland::Auth
 {
     enum class AuthOpcode : uint8_t

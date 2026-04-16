@@ -5,8 +5,8 @@
 #include <string_view>
 #include <iostream>
 
-#include <boost/core/demangle.hpp>
 #include <boost/describe.hpp>
+#include <boost/core/demangle.hpp>
 #include <boost/mp11.hpp>
 
 #include <boost/mysql/connection_pool.hpp>

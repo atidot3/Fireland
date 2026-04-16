@@ -1,5 +1,8 @@
 #include "AuthSession.h"
-#include "AuthOpcode.h"
+#include "../Realm/Realm.h"
+
+#include <Network/Auth/AuthOpcode.hpp>
+#include <Network/Auth/AuthPacket.hpp>
 
 #include <array>
 #include <bit>
@@ -41,8 +44,6 @@ AuthSession::AuthSession(boost::asio::ip::tcp::socket socket, Fireland::Database
         _remoteAddress = std::format("{}:{}", ep.address().to_string(), ep.port());
     else
         _remoteAddress = "<unknown>";
-
-    InitRealms();
 }
 
 AuthSession::~AuthSession() noexcept
@@ -400,36 +401,30 @@ async<void> AuthSession::HandleRealmList(AuthPacket packet)
 {
     FL_LOG_DEBUG("AuthSession", "[{}] Realm list requested", _remoteAddress);
 
-    // Resolve the client IP (without port) for address selection
-    boost::system::error_code ec;
-    auto clientEp = _socket.remote_endpoint(ec);
-    auto clientAddr = ec ? boost::asio::ip::make_address("127.0.0.1") : clientEp.address();
-
     // Build realm entries
     ByteBuffer realmData;
-    for (auto const& realm : _realms)
+    auto realms = sRealm.GetRealms();
+    for (auto const& realm : *realms)
     {
-        std::string address = realm.GetAddressStringForClient(clientAddr);
+        std::string address = std::format("{}:{}", realm.address, realm.port);
+        FL_LOG_DEBUG("AuthSession", "[{}] Realm '{}' -> {} for client", _remoteAddress, realm.name, address);
 
-        FL_LOG_DEBUG("AuthSession", "[{}] Realm '{}' -> {} for client {}",
-            _remoteAddress, realm.Name, address, clientAddr.to_string());
-
-        realmData << realm.Type
-                  << realm.Locked
-                  << realm.Flags
-                  << realm.Name
+        realmData << static_cast<uint8_t>(realm.type)
+                  << static_cast<uint8_t>(realm.allowedSecurityLevel)
+                  << static_cast<uint8_t>(realm_flag::None)
+                  << realm.name
                   << address
-                  << realm.Population
-                  << realm.Characters
-                  << realm.Timezone
-                  << realm.Id;
+                  << realm.population
+                  << uint8_t(0) // characters count
+                  << static_cast<uint8_t>(realm.timezone)
+                  << static_cast<uint8_t>(realm.id);
     }
 
     // Build full response
     // body = uint32 padding(0) + uint16 realm_count + realm data + uint16 footer(0x0010)
     ByteBuffer body;
     body.Pad(4);                  // padding
-    body << static_cast<uint16_t>(_realms.size())
+    body << static_cast<uint16_t>(realms->size())
          << realmData             // realm data
          << uint8_t(0x10)         // footer
          << uint8_t(0x00);
@@ -448,28 +443,6 @@ async<void> AuthSession::HandleRealmList(AuthPacket packet)
     co_await boost::asio::async_write(
         _socket, boost::asio::buffer(response.Storage()),
         boost::asio::use_awaitable);
-}
-
-// ---- Realm initialization --------------------------------------------------
-
-void AuthSession::InitRealms()
-{
-    // TODO: load realms from config / database
-    Realm r;
-    r.Name            = "Fireland";
-    r.Type            = 0;       // Normal
-    r.Locked          = 0;
-    r.Flags           = 0;
-    r.Timezone        = 1;
-    r.Id              = 1;
-    r.Characters      = 0;
-    r.Population      = 0.5f;
-    r.Port            = 8085;
-    r.LocalAddress    = boost::asio::ip::make_address("127.0.0.1");
-    r.ExternalAddress = boost::asio::ip::make_address("127.0.0.1");
-    r.LocalSubnetMask = boost::asio::ip::make_address_v4("255.255.255.0");
-
-    _realms.push_back(std::move(r));
 }
 
 // ---- Error helpers ---------------------------------------------------------

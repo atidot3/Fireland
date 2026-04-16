@@ -10,6 +10,7 @@
 
 using namespace Fireland::Database::Auth;
 using namespace Fireland::Utils::Async;
+using namespace std::chrono_literals;
 
 // Helper: extract a readable error string from a Boost MySQL error.
 // error_with_diagnostics::what() returns a null-terminated string that
@@ -108,6 +109,7 @@ async<void> AuthWrapper::StoreSessionKey(uint32_t accountId, std::span<const uin
         db_err(result.error());
 }
 
+
 async<std::optional<std::array<uint8_t, 40>>> AuthWrapper::LookupSessionKey(uint32_t accountId) noexcept
 {
     auto result = co_await _connection_pool.async_execute<boost::mysql::results>(
@@ -131,4 +133,29 @@ async<std::optional<std::array<uint8_t, 40>>> AuthWrapper::LookupSessionKey(uint
     std::array<uint8_t, 40> sessionKey{};
     std::copy_n(blob.begin(), 40, sessionKey.begin());
     co_return sessionKey;
+}
+
+// ------------------- REALMLIST MANAGEMENT -------------------
+
+async<std::optional<std::vector<realmlist>>> AuthWrapper::GetRealmlist() noexcept
+{
+    auto result = co_await _connection_pool.async_execute<std::vector<realmlist>>("SELECT * FROM realmlist");
+    if (!result)
+    {
+        db_err(result.error());
+        co_return std::nullopt;
+    }
+    if (result.value().empty()) co_return std::nullopt;
+
+    co_return result.value();
+}
+
+async<std::optional<realmlist>> AuthWrapper::CreateRealm(realmlist realm) noexcept
+{
+    co_return std::nullopt;
+}
+
+async<bool> AuthWrapper::UpdateRealm(realmlist r) noexcept
+{
+    co_return false;
 }

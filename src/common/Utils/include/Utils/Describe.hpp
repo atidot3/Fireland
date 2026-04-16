@@ -1,6 +1,8 @@
 #pragma once
 
 #include <string_view>
+
+#include <boost/core/demangle.hpp>
 #include <boost/describe.hpp>
 #include <boost/mp11.hpp>
 

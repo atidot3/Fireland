@@ -25,8 +25,8 @@
 #include <Utils/Async.hpp>
 #include <Utils/ByteBuffer.h>
 
-#include "WorldOpcode.h"
-#include "WorldPacket.h"
+#include <Network/World/WorldOpcode.hpp>
+#include <Network/World/WorldPacket.hpp>
 
 namespace Fireland::World
 {
