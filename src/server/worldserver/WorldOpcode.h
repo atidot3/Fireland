@@ -17,6 +17,15 @@ namespace Fireland::World
 static const std::string SERVER_CONNECTION_INIT = "WORLD OF WARCRAFT CONNECTION - SERVER TO CLIENT";
 static const std::string CLIENT_CONNECTION_INIT = "WORLD OF WARCRAFT CONNECTION - CLIENT TO SERVER";
 
+enum OpcodeMisc : uint16_t
+{
+    MAX_OPCODE                                        = 0x7FFF,
+    NUM_OPCODE_HANDLERS                               = (MAX_OPCODE + 1),
+    UNKNOWN_OPCODE                                    = 0xFFFF,
+    NULL_OPCODE                                       = 0,
+    COMPRESSED_OPCODE_MASK                            = 0x8000
+};
+
 // Server → Client opcodes (2-byte opcode in header)
 enum WorldServerOpcodes : uint32_t
 {
@@ -63,6 +72,7 @@ enum WorldServerOpcodes : uint32_t
     SMSG_MESSAGECHAT = 0x2026,
 
     CMSG_READY_FOR_ACCOUNT_DATA_TIMES = 0x2B16,
+    CMSG_REALM_SPLIT = 0x2906,
     CMSG_LOG_DISCONNECT = 0x446D,
 };
 BOOST_DESCRIBE_ENUM(WorldServerOpcodes,
@@ -109,6 +119,7 @@ BOOST_DESCRIBE_ENUM(WorldServerOpcodes,
     SMSG_MESSAGECHAT,
 
     CMSG_READY_FOR_ACCOUNT_DATA_TIMES,
+    CMSG_REALM_SPLIT,
     CMSG_LOG_DISCONNECT);
 
 // Expansion constant

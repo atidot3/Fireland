@@ -11,8 +11,9 @@
 //   CMSG (client → server): 6 bytes  [Size:2 BE | Opcode:4 LE]
 //
 // Two independent ARC4 streams are used — one per direction.
-// Each stream is keyed with HMAC-SHA1(SessionKey, DirectionSeed) and then
-// has its first 1024 keystream bytes discarded.
+// Each stream is keyed with HMAC-SHA1(key=fixedSeed, data=SessionKey) and then
+// has its first 1024 keystream bytes discarded (ARC4-drop1024).
+// The fixed seeds are hardcoded in both the client and server binaries.
 // ============================================================================
 
 #include <array>
@@ -27,30 +28,30 @@ namespace Fireland::Crypto {
 class WorldCrypt
 {
 public:
-    /// Initialise both cipher streams from the SRP6 session key and the
-    /// per-session random seeds that were sent in SMSG_AUTH_CHALLENGE.
+    /// Initialise both cipher streams from the SRP6 session key K.
     ///
-    /// In Cataclysm 4.x, the two 16-byte halves of the DosChallenge field
-    /// serve as HMAC keys:
-    ///   encKey = HMAC-SHA1(K, encryptSeed)   — used for outgoing SMSG headers
-    ///   decKey = HMAC-SHA1(K, decryptSeed)   — used for incoming CMSG headers
-    /// Keys are hardcoded in the client
-    /// The client derives the same keys because it received the seeds in the
-    /// challenge packet. Must be called once after CMSG_AUTH_SESSION is verified.
+    /// Key derivation (Cataclysm 4.3.4):
+    ///   encKey = HMAC-SHA1(key=kServerEncryptSeed, data=K)  — SMSG header encrypt
+    ///   decKey = HMAC-SHA1(key=kClientDecryptSeed, data=K)  — CMSG header decrypt
+    ///
+    /// Must be called once after CMSG_AUTH_SESSION is verified.
     void Init(std::span<const uint8_t> sessionKey)
     {
-        // Seeds for Cataclysm 4.x
+        // Cataclysm 4.3.4 (build 15595) hardcoded seeds — identical to TC WorldPacketCrypt.cpp.
+        // The client derives keys as: HMAC-SHA1(key=fixedSeed, data=K).
+        // Seed is the HMAC *key*; session key K is the HMAC *message*.
         static const uint8_t kServerEncryptSeed[] = {
-            0x08, 0xF6, 0x61, 0xC1, 0xCA, 0x4C, 0x41, 0xE0,
-            0xF2, 0x01, 0x99, 0xFF, 0x02, 0x15, 0x7A, 0x00};
+            0xCC, 0x98, 0xAE, 0x04, 0xE8, 0x97, 0xEA, 0xCA,
+            0x12, 0xDD, 0xC0, 0x93, 0x42, 0x91, 0x53, 0x57};
         static const uint8_t kClientDecryptSeed[] = {
-            0x40, 0xAD, 0x9C, 0xE3, 0x44, 0x2A, 0x9C, 0x0F,
-            0x9F, 0xBE, 0x31, 0xB2, 0xAD, 0x93, 0x9B, 0x61};
+            0xC2, 0xB3, 0x72, 0x3C, 0xC6, 0xAE, 0xD9, 0xB5,
+            0x34, 0x3C, 0x53, 0xEE, 0x2F, 0x43, 0x67, 0xCE};
 
         std::span<const uint8_t> encryptSeed(kServerEncryptSeed, sizeof(kServerEncryptSeed));
         std::span<const uint8_t> decryptSeed(kClientDecryptSeed, sizeof(kClientDecryptSeed));
-        SHA1::Digest encKey = HMAC_SHA1(sessionKey, encryptSeed);
-        SHA1::Digest decKey = HMAC_SHA1(sessionKey, decryptSeed);
+        // HMAC(key=seed, data=K) — seed is the key, K is the message
+        SHA1::Digest encKey = HMAC_SHA1(encryptSeed, sessionKey);
+        SHA1::Digest decKey = HMAC_SHA1(decryptSeed, sessionKey);
 
         _encrypt.Init(std::span<const uint8_t>(encKey));
         _decrypt.Init(std::span<const uint8_t>(decKey));

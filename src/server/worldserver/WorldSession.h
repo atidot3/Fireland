@@ -66,6 +66,13 @@ namespace Fireland::World
         // ---- Packet loop (post-auth) ----
         Utils::Async::async<void> PacketLoop();
 
+        // ---- Post-auth packet handlers ----
+        Utils::Async::async<void> HandleReadyForAccountDataTimes(WorldPacket& packet);
+        Utils::Async::async<void> HandleCharEnum(WorldPacket& packet);
+        Utils::Async::async<void> HandleRealmSplit(WorldPacket& packet);
+        Utils::Async::async<void> SendCharEnum();
+        Utils::Async::async<void> HandlePing(WorldPacket& packet);
+
         // ---- Send / receive helpers ----
 
         /// Read a complete CMSG (header + payload) from the socket.

@@ -275,7 +275,7 @@ async<void> WorldSession::HandleAuthSession()
     // Precise order and content in 4.3.4 is critical for the client to proceed to
     // Character Enum.
     co_await SendAuthResponse(AuthResponseResult::AUTH_OK);
-    co_await SendAddonInfo();
+    /*co_await SendAddonInfo();
     co_await SendClientCacheVersion();
     co_await SendTutorialFlags();
     co_await SendAccountRestrictedUpdate();
@@ -285,7 +285,7 @@ async<void> WorldSession::HandleAuthSession()
     co_await SendMotd();
     co_await SendLearnedDanceMoves();
     co_await SendInitialRaidGroupError();
-    co_await SendSetDfFastLaunchResources();
+    co_await SendSetDfFastLaunchResources();*/
 
     // Note: SMSG_ACCOUNT_DATA_TIMES, SMSG_REALM_SPLIT, and
     // SMSG_FEATURE_SYSTEM_STATUS are now sent reactively when the client requests
@@ -297,31 +297,33 @@ async<void> WorldSession::SendAuthResponse(AuthResponseResult result)
 {
     WorldPacket response(SMSG_AUTH_RESPONSE);
 
-    if (result == AuthResponseResult::AUTH_OK)
+    // Cata 4.3.4 (15595) SMSG_AUTH_RESPONSE bit-packed format (mirrors TC AuthResponse::Write):
+    //   bit 0: hasWaitInfo
+    //   [bit 1: HasFCM — only present when hasWaitInfo]
+    //   bit N: hasSuccessInfo
+    //   FlushBits()
+    //   [SuccessInfo fields — only present when hasSuccessInfo]
+    //   uint8 Result
+    //   [uint32 WaitCount — only present when hasWaitInfo]
+    bool hasSuccessInfo = (result == AuthResponseResult::AUTH_OK);
+    bool hasWaitInfo    = false; // queue not implemented
+
+    response.WriteBit(hasWaitInfo);
+    response.WriteBit(hasSuccessInfo);
+    response.FlushBits();
+
+    if (hasSuccessInfo)
     {
-        response.WriteBit(false); // isQueued
-        response.WriteBit(true);  // hasSuccessInfo
-
-        response.WriteBit(false); // isBattleNetAccount
-        response.WriteBit(false); // isTrialAccount
-        response.WriteBit(true);  // isExpansionStandard
-
-        response.FlushBits();
-
-        response << uint32_t(0);                   // TimeRemain
-        response << uint8_t(EXPANSION_CATACLYSM);  // activeExpansionLevel
-        response << uint32_t(0);                   // TimeSecondsUntilPCKick
-        response << uint8_t(EXPANSION_CATACLYSM);  // accountExpansionLevel
-        response << uint32_t(0);                   // TimeRested
-        response << uint8_t(0);                    // TimeOptions
+        // Field order must match TC: TimeRemain, ActiveExpansionLevel,
+        // TimeSecondsUntilPCKick, AccountExpansionLevel, TimeRested, TimeOptions
+        response << uint32_t(0); // TimeRemain
+        response << uint8_t(EXPANSION_CATACLYSM);  // ActiveExpansionLevel (Cataclysm = 3 if needed)
+        response << uint32_t(0); // TimeSecondsUntilPCKick
+        response << uint8_t(EXPANSION_CATACLYSM);  // AccountExpansionLevel
+        response << uint32_t(0); // TimeRested
+        response << uint8_t(0);  // TimeOptions
     }
-    else
-    {
-        response.WriteBit(false); // isQueued
-        response.WriteBit(false); // hasSuccessInfo
-        response.FlushBits();     // → 1 byte: 0x00
-    }
-    
+
     response << result;
 
     FL_LOG_DEBUG("WorldSession", "[{}] Sending SMSG_AUTH_RESPONSE (result=0x{:02X})", _remoteAddress, static_cast<uint8_t>(result));
@@ -334,13 +336,12 @@ async<void> WorldSession::SendAddonInfo()
 {
     WorldPacket response(SMSG_ADDON_INFO);
 
-    // Cata 4.3.4 (15595) uses bit-packed counts (23 bits each)
-    response.WriteBits(0, 23);// addonCount
-    response.WriteBits(0, 23);// bannedAddonCount
-    response.FlushBits(); // align to byte boundary after writing bit-packed counts
+    // No secure addon info entries (zero addons sent by client or all known-good).
+    // Followed by uint32 banned-addon count = 0.
+    response << uint32_t(0); // bannedAddonCount
 
     co_await SendPacket(response);
-    FL_LOG_INFO("WorldSession", "[{}] SMSG_ADDON_INFO sent (4.3.4 15595 bit-packed format)", _remoteAddress);
+    FL_LOG_INFO("WorldSession", "[{}] SMSG_ADDON_INFO sent", _remoteAddress);
 }
 
 async<void> WorldSession::SendClientCacheVersion()
@@ -430,7 +431,7 @@ async<void> WorldSession::SendRealmSplit(uint32_t realmId)
 
     split.WriteBits(static_cast<uint32_t>(splitDate.size()), 7);
     split.FlushBits();
-    split.WriteString(splitDate);
+    split.Append(splitDate.data(), splitDate.size());
 
     co_await SendPacket(split);
     FL_LOG_INFO("WorldSession", "[{}] SMSG_REALM_SPLIT sent (Bit-packed 4.3.4)", _remoteAddress);
@@ -446,8 +447,8 @@ async<void> WorldSession::SendSetTimeZoneInformation()
     data.WriteBits(static_cast<uint32_t>(localTz.length()), 7);
     data.FlushBits();
 
-    data.WriteString(serverTz);
-    data.WriteString(localTz);
+    data.Append(serverTz.data(), serverTz.size());
+    data.Append(localTz.data(), localTz.size());
 
     co_await SendPacket(data);
     FL_LOG_INFO("WorldSession", "[{}] SMSG_SET_TIME_ZONE_INFORMATION sent (Bit-packed 4.3.4)", _remoteAddress);
@@ -475,9 +476,7 @@ async<void> WorldSession::SendMotd()
     motd.FlushBits();
 
     for (auto const &line : lines)
-    {
-        motd.WriteString(line);
-    }
+        motd.Append(line.data(), line.size());
 
     co_await SendPacket(motd);
     FL_LOG_INFO("WorldSession", "[{}] SMSG_MOTD sent (4.3.4 15595 Bit-packed)", _remoteAddress);
@@ -496,14 +495,82 @@ async<void> WorldSession::PacketLoop()
         FL_LOG_DEBUG("WorldSession", "[{}] {} (payload={} bytes)",
             _remoteAddress, packet.opcodeName(), packet.Size());
 
-        if (!packet.Empty())
+        switch (packet.opcode())
         {
-            FL_LOG_TRACE("WorldSession", "[{}] Payload: {}",
-                _remoteAddress, StringUtils::HexStr(packet.Data()));
+            case CMSG_READY_FOR_ACCOUNT_DATA_TIMES:
+                co_await HandleReadyForAccountDataTimes(packet);
+                break;
+            case CMSG_CHAR_ENUM:
+                co_await HandleCharEnum(packet);
+                break;
+            case CMSG_REALM_SPLIT:
+                co_await HandleRealmSplit(packet);
+                break;
+            case CMSG_PING:
+                co_await HandlePing(packet);
+                break;
+            case CMSG_LOG_DISCONNECT:
+                FL_LOG_INFO("WorldSession", "[{}] Client sent CMSG_LOG_DISCONNECT", _remoteAddress);
+                co_return;
+            default:
+                FL_LOG_DEBUG("WorldSession", "[{}] Unhandled opcode {} ({} bytes)",
+                    _remoteAddress, packet.opcodeName(), packet.Size());
+                break;
         }
-
-        // TODO: Dispatch world opcodes (CMSG_CHAR_ENUM, CMSG_PLAYER_LOGIN, etc.)
     }
+}
+
+// ---- Post-auth packet handlers -----------------------------------------------
+
+async<void> WorldSession::HandleReadyForAccountDataTimes(WorldPacket& /*packet*/)
+{
+    co_await SendAccountDataTimes();
+}
+
+async<void> WorldSession::HandleCharEnum(WorldPacket& /*packet*/)
+{
+    co_await SendCharEnum();
+}
+
+async<void> WorldSession::HandleRealmSplit(WorldPacket& packet)
+{
+    uint32_t realmId = 0;
+    if (packet.Size() >= 4)
+        realmId = packet.Read<uint32_t>();
+    co_await SendRealmSplit(realmId);
+}
+
+async<void> WorldSession::HandlePing(WorldPacket& packet)
+{
+    if (packet.Size() < 8)
+        co_return;
+
+    uint32_t serial  = packet.Read<uint32_t>();
+    uint32_t latency = packet.Read<uint32_t>();
+    FL_LOG_DEBUG("WorldSession", "[{}] CMSG_PING serial={} latency={}ms", _remoteAddress, serial, latency);
+
+    WorldPacket pong(SMSG_PONG);
+    pong << serial;
+    co_await SendPacket(pong);
+}
+
+async<void> WorldSession::SendCharEnum()
+{
+    // SMSG_CHAR_ENUM (Cata 4.3.4 bit-packed format, 0 characters).
+    // Layout mirrors TC EnumCharactersResult::Write():
+    //   WriteBits(restrictionCount, 23)
+    //   WriteBit(success)
+    //   WriteBits(charCount, 17)
+    //   FlushBits()
+    //   [per-character data — omitted when charCount=0]
+    WorldPacket data(SMSG_CHAR_ENUM);
+    data.WriteBits(0, 23);   // FactionChangeRestrictions count
+    data.WriteBit(true);     // Success
+    data.WriteBits(0, 17);   // Characters count
+    data.FlushBits();
+
+    co_await SendPacket(data);
+    FL_LOG_INFO("WorldSession", "[{}] SMSG_CHAR_ENUM sent (empty list)", _remoteAddress);
 }
 
 // ---- Helpers ---------------------------------------------------------------
@@ -546,6 +613,17 @@ async<void> WorldSession::SendPacket(const WorldPacket& packet)
 {
     auto frame = packet.Serialize();
     
+    if (packet.opcode() == NULL_OPCODE)
+    {
+        FL_LOG_ERROR("Network", "Prevented sending of NULL_OPCODE");
+        co_return;
+    }
+    else if (packet.opcode() == UNKNOWN_OPCODE)
+    {
+        FL_LOG_ERROR("Network", "Prevented sending of UNKNOWN_OPCODE");
+        co_return;
+    }
+
     // Encrypt the 4-byte SMSG header in-place.
     // WorldCrypt::EncryptSend is a no-op until Init() has been called.
     FL_LOG_DEBUG("WorldSession", "[{}] SendPacket RAW: {}", _remoteAddress, Fireland::Utils::StringUtils::HexStr(frame));
