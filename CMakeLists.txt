@@ -36,6 +36,14 @@ include(cmake/CompilerOptions.cmake)
 include(cmake/Macros.cmake)
 
 # ----------------------------------------------------------------------------
+# FetchContent — disable update checks after first download so that
+# reconfiguring (e.g. after a CMakeLists.txt edit) never re-fetches or
+# re-configures Boost.  Set FETCHCONTENT_UPDATES_DISCONNECTED=OFF to force
+# an update check on the next configure.
+# ----------------------------------------------------------------------------
+option(FETCHCONTENT_UPDATES_DISCONNECTED "Skip FetchContent update step on reconfigure" ON)
+
+# ----------------------------------------------------------------------------
 # Dependencies & sources
 # ----------------------------------------------------------------------------
 add_subdirectory(3rdParty)

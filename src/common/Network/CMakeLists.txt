@@ -45,4 +45,6 @@ target_link_libraries(fireland_network
     fireland_utils   # brings Boost::asio, Boost::system, Boost::log, ws2_32, etc.
 )
 
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${headers_files} ${sources_files})
+
 set_target_properties(fireland_network PROPERTIES FOLDER "Common")

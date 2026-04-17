@@ -27,4 +27,6 @@ target_link_libraries(authserver
         fireland_database
 )
 
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${headers_files} ${sources_files})
+
 set_target_properties(authserver PROPERTIES FOLDER "Server")

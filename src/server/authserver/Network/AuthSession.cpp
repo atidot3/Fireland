@@ -172,9 +172,9 @@ async<void> AuthSession::HandleLogonChallenge(AuthPacket packet)
     auto N_bytes = N.AsByteArray(32);
 
     ByteBuffer response(119);
-    response << AuthOpcode::CMD_AUTH_LOGON_CHALLENGE // cmd
+    response << AuthOpcode::CMD_AUTH_LOGON_CHALLENGE                     // cmd
              << uint8_t(0x00)                                            // unk
-             << ResponseCodes::RESPONSE_SUCCESS                          // error
+             << std::to_underlying(ResponseCodes::RESPONSE_SUCCESS)      // error
              << B.AsByteArray(32)                                        // B (32 bytes)
              << static_cast<uint8_t>(g_bytes.size()) << g_bytes          // g_len + g
              << static_cast<uint8_t>(N_bytes.size()) << N_bytes          // N_len + N
@@ -215,7 +215,7 @@ async<void> AuthSession::HandleLogonProof(AuthPacket packet)
 
         ByteBuffer fail(4);
         fail << AuthOpcode::CMD_AUTH_LOGON_PROOF
-             << ResponseCodes::AUTH_INCORRECT_PASSWORD
+             << std::to_underlying(ResponseCodes::AUTH_INCORRECT_PASSWORD)
              << uint8_t(0x03) << uint8_t(0x00);
 
         co_await boost::asio::async_write(_socket, boost::asio::buffer(fail.Storage()), boost::asio::use_awaitable);
@@ -233,7 +233,7 @@ async<void> AuthSession::HandleLogonProof(AuthPacket packet)
 
     ByteBuffer response(32);
     response << AuthOpcode::CMD_AUTH_LOGON_PROOF // cmd
-             << ResponseCodes::RESPONSE_SUCCESS  // error
+             << std::to_underlying(ResponseCodes::RESPONSE_SUCCESS)  // error
              << M2;                              // M2 (20 bytes)
     response.Pad(10); // account_flags (uint32) + survey_id (uint32) + login_flags (uint16)
 
@@ -282,7 +282,7 @@ async<void> AuthSession::HandleReconnectChallenge(AuthPacket packet)
 
         ByteBuffer fail(3);
         fail << AuthOpcode::CMD_AUTH_RECONNECT_CHALLENGE
-             << ResponseCodes::AUTH_UNKNOWN_ACCOUNT;
+             << std::to_underlying(ResponseCodes::AUTH_UNKNOWN_ACCOUNT);
         co_await boost::asio::async_write(
             _socket, boost::asio::buffer(fail.Storage()),
             boost::asio::use_awaitable);
@@ -303,7 +303,7 @@ async<void> AuthSession::HandleReconnectChallenge(AuthPacket packet)
     // Response: cmd(1) + error(1) + reconnect_rand(16) + zeros(16)
     ByteBuffer response(34);
     response << AuthOpcode::CMD_AUTH_RECONNECT_CHALLENGE
-             << ResponseCodes::RESPONSE_SUCCESS;
+             << std::to_underlying(ResponseCodes::RESPONSE_SUCCESS);
     response.Append(_reconnectRand.data(), _reconnectRand.size());
     response.Pad(16);  // 16 zero bytes
 
@@ -342,7 +342,7 @@ async<void> AuthSession::HandleReconnectProof(AuthPacket packet)
 
         ByteBuffer fail(2);
         fail << AuthOpcode::CMD_AUTH_RECONNECT_PROOF
-             << ResponseCodes::AUTH_UNKNOWN_ACCOUNT;
+             << std::to_underlying(ResponseCodes::AUTH_UNKNOWN_ACCOUNT);
         co_await boost::asio::async_write(
             _socket, boost::asio::buffer(fail.Storage()),
             boost::asio::use_awaitable);
@@ -364,7 +364,7 @@ async<void> AuthSession::HandleReconnectProof(AuthPacket packet)
 
         ByteBuffer fail(2);
         fail << AuthOpcode::CMD_AUTH_RECONNECT_PROOF
-             << ResponseCodes::AUTH_INCORRECT_PASSWORD;
+             << std::to_underlying(ResponseCodes::AUTH_INCORRECT_PASSWORD);
         co_await boost::asio::async_write(
             _socket, boost::asio::buffer(fail.Storage()),
             boost::asio::use_awaitable);
@@ -377,7 +377,7 @@ async<void> AuthSession::HandleReconnectProof(AuthPacket packet)
     // Response: cmd(1) + error(1) + padding(2)
     ByteBuffer response(4);
     response << AuthOpcode::CMD_AUTH_RECONNECT_PROOF
-             << ResponseCodes::RESPONSE_SUCCESS;
+             << std::to_underlying(ResponseCodes::RESPONSE_SUCCESS);
     response.Pad(2);
 
 	_status = AuthStatus::WAIT_FOR_REALM_LIST;
@@ -443,7 +443,7 @@ async<void> AuthSession::SendChallengeError(ResponseCodes error)
     ByteBuffer response(3);
     response << AuthOpcode::CMD_AUTH_LOGON_CHALLENGE
              << uint8_t(0x00)
-             << error;
+             << std::to_underlying(error);
 
     co_await boost::asio::async_write(
         _socket, boost::asio::buffer(response.Storage()),

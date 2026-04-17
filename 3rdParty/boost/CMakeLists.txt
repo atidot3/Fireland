@@ -9,6 +9,19 @@
 #            SourceForge / official tarballs do NOT work with CMake.
 # ============================================================================
 
+# ----------------------------------------------------------------------------
+# Fast path: if Boost was previously installed via the 'deps' preset, use it
+# directly via find_package — FetchContent is never invoked.
+# ----------------------------------------------------------------------------
+find_package(Boost ${FIRELAND_BOOST_VERSION} QUIET CONFIG)
+if(Boost_FOUND)
+  message(STATUS "[Fireland] Boost ${Boost_VERSION} found at ${Boost_DIR} — skipping FetchContent")
+  return()
+endif()
+
+# Slow path: first run or 'deps' preset — download and build from source.
+message(STATUS "[Fireland] Boost not found locally, fetching from source...")
+
 include(FetchContent)
 
 # Version string manipulation (1.90.0 -> 1_90_0 for URL paths if needed)
@@ -78,3 +91,18 @@ foreach(_subdir IN LISTS _boost_subdirs)
 endforeach()
 
 message(STATUS "[Fireland] Boost ${FIRELAND_BOOST_VERSION} ready")
+
+# ----------------------------------------------------------------------------
+# When running the 'deps' preset, install Boost to CMAKE_INSTALL_PREFIX so
+# subsequent dev builds can find it via find_package without rebuilding.
+# ----------------------------------------------------------------------------
+if(FIRELAND_DEPS_ONLY AND CMAKE_INSTALL_PREFIX)
+  message(STATUS "[Fireland] Boost will be installed to ${CMAKE_INSTALL_PREFIX}")
+  install(CODE "
+    message(STATUS \"Installing Boost to ${CMAKE_INSTALL_PREFIX}...\")
+    execute_process(
+      COMMAND \"${CMAKE_COMMAND}\" --install \"${boost_BINARY_DIR}\"
+                                  --prefix  \"${CMAKE_INSTALL_PREFIX}\"
+    )
+  ")
+endif()

@@ -9,8 +9,8 @@
 set(headers_files
   include/Shared/SharedDefines.hpp
   include/Shared/Auth/Account.h
-
   include/Shared/Realm/Realmlist.h
+  include/Shared/Char/Characters.h
 )
 
 set(sources_files
@@ -38,5 +38,7 @@ target_include_directories(fireland_shared PRIVATE
   include/
   src/
 )
+
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${headers_files} ${sources_files})
 
 set_target_properties(fireland_shared PROPERTIES FOLDER "Common")

@@ -2,10 +2,14 @@
 # Tests unitaires Network
 # ============================================================================
 
-add_executable(fireland_network_tests
+set(sources_files
   main.cpp
   test_packet_buffer.cpp
 )
+
+add_executable(fireland_network_tests ${sources_files})
+
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${sources_files})
 
 target_link_libraries(fireland_network_tests
   PRIVATE

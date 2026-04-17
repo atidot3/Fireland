@@ -40,4 +40,6 @@ target_include_directories(fireland_database PRIVATE
   src/
 )
 
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${headers_files} ${sources_files})
+
 set_target_properties(fireland_database PROPERTIES FOLDER "Common")

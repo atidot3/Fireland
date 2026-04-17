@@ -2,11 +2,15 @@
 # Tests unitaires Crypto
 # ============================================================================
 
-add_executable(fireland_crypto_tests
+set(sources_files
   main.cpp
   test_sha1.cpp
   test_world_crypt.cpp
 )
+
+add_executable(fireland_crypto_tests ${sources_files})
+
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${sources_files})
 
 target_link_libraries(fireland_crypto_tests
   PRIVATE

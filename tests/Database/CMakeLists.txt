@@ -2,10 +2,14 @@
 # Tests unitaires Database
 # ============================================================================
 
-add_executable(fireland_database_tests
+set(sources_files
   main.cpp
   test_database.cpp
 )
+
+add_executable(fireland_database_tests ${sources_files})
+
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${sources_files})
 
 target_link_libraries(fireland_database_tests
   PRIVATE

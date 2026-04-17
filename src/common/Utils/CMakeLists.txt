@@ -60,4 +60,6 @@ if(WIN32)
   target_link_libraries(fireland_utils PUBLIC ws2_32 mswsock)
 endif()
 
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${headers_files} ${sources_files})
+
 set_target_properties(fireland_utils PROPERTIES FOLDER "Common")

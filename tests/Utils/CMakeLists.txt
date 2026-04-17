@@ -2,13 +2,17 @@
 # Tests unitaires Utils
 # ============================================================================
 
-add_executable(fireland_utils_tests
+set(sources_files
   main.cpp
   test_utils_describe.cpp
   test_string_utils.cpp
   test_bytebuffer.cpp
   test_Configuration.cpp
 )
+
+add_executable(fireland_utils_tests ${sources_files})
+
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${sources_files})
 
 target_link_libraries(fireland_utils_tests
   PRIVATE
