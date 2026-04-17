@@ -64,6 +64,10 @@ Fireland::Utils::Async::async<void> Realm::realm_update()
         {
             _realms = std::make_shared<std::vector<realmlist>>(std::move(opt_db_realms.value()));
             FL_LOG_INFO("Realmlist", "Updated realm list cache with {} realms", _realms->size());
+            for (const auto& realm : *_realms)
+            {
+                FL_LOG_INFO("Realmlist", " - {} {} ({}:{})", realm.name, Fireland::Utils::Describe::to_string(static_cast<realm_flag>(realm.flag)), realm.address, realm.port);
+			}
         }
         else
         {

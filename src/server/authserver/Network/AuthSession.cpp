@@ -402,7 +402,7 @@ async<void> AuthSession::HandleRealmList(AuthPacket packet)
 
         realmData << static_cast<uint8_t>(realm.type)
                   << static_cast<uint8_t>(realm.allowedSecurityLevel)
-                  << static_cast<uint8_t>(realm_flag::None)
+                  << static_cast<uint8_t>(realm.flag)
                   << realm.name
                   << address
                   << realm.population

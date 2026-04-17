@@ -63,8 +63,9 @@ struct realmlist
     std::string address;
     uint16_t    port;
     uint8_t     type;
+    uint8_t     flag;
     uint8_t     timezone;
     uint8_t     allowedSecurityLevel;
     float       population;
 };
-BOOST_DESCRIBE_STRUCT(realmlist, (), (id, name, address, port, type, timezone, allowedSecurityLevel, population))
+BOOST_DESCRIBE_STRUCT(realmlist, (), (id, name, address, port, type, flag, timezone, allowedSecurityLevel, population))

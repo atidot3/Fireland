@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS `realmlist` (
   `address` varchar(255) NOT NULL DEFAULT '127.0.0.1',
   `port` smallint(5) unsigned NOT NULL DEFAULT '8085',
   `type` tinyint(3) unsigned NOT NULL DEFAULT '0',
+  `flag` tinyint(3) unsigned NOT NULL DEFAULT '0',
   `timezone` tinyint(3) unsigned NOT NULL DEFAULT '1',
   `allowedSecurityLevel` tinyint(3) unsigned NOT NULL DEFAULT '0',
   `population` float NOT NULL DEFAULT '0',
