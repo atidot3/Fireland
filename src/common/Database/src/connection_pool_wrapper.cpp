@@ -8,6 +8,20 @@
 
 using namespace Fireland::Database;
 
+// Helper: extract a readable error string from a Boost MySQL error.
+// error_with_diagnostics::what() returns a null-terminated string that
+// includes both the error code and the server/client diagnostic message.
+/*static*/ void connection_pool_wrapper::db_err(const boost::mysql::error_with_diagnostics& e)
+{
+    auto ec = e.code();
+	auto diag = e.get_diagnostics();
+
+    FL_LOG_FATAL("Database", "> {}: {}", e.code().to_string(), ec.message());
+    std::string server_error(diag.server_message());
+    std::string client_error(diag.client_message());
+    FL_LOG_FATAL("Database", "> Diagnostics: server='{}', client='{}'", server_error, client_error);
+}
+
 connection_pool_wrapper::connection_pool_wrapper(boost::asio::any_io_executor exec) noexcept
     : _exec{ boost::asio::make_strand(exec) }
     , _pool{ nullptr }

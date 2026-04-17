@@ -77,6 +77,9 @@ namespace Fireland::Database
 		//stop it
 		void stop() noexcept;
 
+		//log client/server err diagnostics
+		static void db_err(const boost::mysql::error_with_diagnostics& e);
+
 		//get a connection from the pool for advanced use (transactions)
 		async_mysql_result<boost::mysql::pooled_connection> async_get_connection() noexcept;
 

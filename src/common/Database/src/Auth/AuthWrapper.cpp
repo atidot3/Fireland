@@ -12,20 +12,6 @@ using namespace Fireland::Database::Auth;
 using namespace Fireland::Utils::Async;
 using namespace std::chrono_literals;
 
-// Helper: extract a readable error string from a Boost MySQL error.
-// error_with_diagnostics::what() returns a null-terminated string that
-// includes both the error code and the server/client diagnostic message.
-void db_err(const boost::mysql::error_with_diagnostics& e)
-{
-    auto ec = e.code();
-	auto diag = e.get_diagnostics();
-
-    FL_LOG_FATAL("Database", "> {}: {}", e.code().to_string(), ec.message());
-    std::string server_error(diag.server_message());
-    std::string client_error(diag.client_message());
-    FL_LOG_FATAL("Database", "> Diagnostics: server='{}', client='{}'", server_error, client_error);
-}
-
 std::unique_ptr<AuthWrapper> AuthWrapper::instance_ = nullptr;
 
 void AuthWrapper::Init(boost::asio::any_io_executor exec, connection_pool_wrapper_options options)
@@ -76,7 +62,7 @@ async<bool> AuthWrapper::ping() noexcept
     auto result = co_await _connection_pool.async_get_connection();
     if (!result)
     {
-        db_err(result.error());
+        connection_pool_wrapper::db_err(result.error());
         co_return false;
     }
 
@@ -97,7 +83,7 @@ async<std::optional<account>> AuthWrapper::Create(account create_account) noexce
     auto result = co_await _connection_pool.async_insert<account>(saved);
     if (!result)
     {
-        db_err(result.error());
+        connection_pool_wrapper::db_err(result.error());
         co_return std::nullopt;
     }
     if (result.value().affected_rows() == 0) co_return std::nullopt;
@@ -113,7 +99,7 @@ async<std::optional<account>> AuthWrapper::GetAccountByUsername(std::string_view
         "SELECT id, username, email, salt, verifier, expansion FROM account WHERE username = ?", username_str);
     if (!result)
     {
-        db_err(result.error());
+        connection_pool_wrapper::db_err(result.error());
         co_return std::nullopt;
     }
     if (result.value().empty()) co_return std::nullopt;
@@ -131,7 +117,7 @@ async<void> AuthWrapper::StoreSessionKey(uint32_t accountId, std::span<const uin
         " ON DUPLICATE KEY UPDATE session_key = ?",
         accountId, sessionKeyVec, sessionKeyVec);
     if (!result)
-        db_err(result.error());
+        connection_pool_wrapper::db_err(result.error());
 }
 
 
@@ -141,7 +127,7 @@ async<std::optional<std::array<uint8_t, 40>>> AuthWrapper::LookupSessionKey(uint
         "SELECT session_key FROM account_session WHERE id = ?", accountId);
     if (!result)
     {
-        db_err(result.error());
+        connection_pool_wrapper::db_err(result.error());
         co_return std::nullopt;
     }
 
@@ -167,7 +153,7 @@ async<std::optional<std::vector<realmlist>>> AuthWrapper::GetRealmlist() noexcep
     auto result = co_await _connection_pool.async_execute<std::vector<realmlist>>("SELECT * FROM realmlist");
     if (!result)
     {
-        db_err(result.error());
+        connection_pool_wrapper::db_err(result.error());
         co_return std::nullopt;
     }
     if (result.value().empty()) co_return std::nullopt;

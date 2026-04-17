@@ -23,6 +23,7 @@
 #include <Network/TcpListener.h>
 
 #include <Database/Auth/AuthWrapper.h>
+#include <Database/Char/CharWrapper.h>
 
 #include "WorldSession.h"
 
@@ -40,12 +41,22 @@ Fireland::Utils::Async::async<bool> initiate_database(Fireland::Utils::IoContext
     sAuthDB.start();
     if (!co_await sAuthDB.ping())
     {
-        FL_LOG_ERROR("WorldServer", "Failed to connect to the database. Shutting down.");
+        FL_LOG_ERROR("WorldServer", "Failed to connect to the Auth database. Shutting down.");
         sAuthDB.Shutdown();
         thread_pool.Stop();
         co_return false;
     }
 
+    dbOptions.database = sConfig.get<std::string>(DATABASE_CHAR);
+	Fireland::Database::Char::CharWrapper::Init(thread_pool.Get(), dbOptions);
+    sCharDB.start();
+    if (!co_await sCharDB.ping())
+    {
+        FL_LOG_ERROR("WorldServer", "Failed to connect to the Characters database. Shutting down.");
+        sCharDB.Shutdown();
+        thread_pool.Stop();
+        co_return false;
+    }
     co_return true;
 }
 

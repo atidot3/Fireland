@@ -8,12 +8,14 @@ set(headers_files
   include/Database/connection_pool_wrapper.h
   
   include/Database/Auth/AuthWrapper.h
+  include/Database/Char/CharWrapper.h
 )
 
 set(sources_files
   src/connection_pool_wrapper.cpp
 
   src/Auth/AuthWrapper.cpp
+  src/Char/CharWrapper.cpp
 )
 
 add_library(fireland_database STATIC

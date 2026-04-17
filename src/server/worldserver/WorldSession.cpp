@@ -17,6 +17,7 @@
 #include <Utils/StringUtils.h>
 
 #include <Database/Auth/AuthWrapper.h>
+#include <Database/Char/CharWrapper.h>
 
 using namespace Fireland::World;
 using namespace Fireland::Utils;
@@ -565,6 +566,31 @@ async<void> WorldSession::HandlePing(WorldPacket& packet)
 
 async<void> WorldSession::SendCharEnum()
 {
+    WorldPacket data(SMSG_CHAR_ENUM);
+    
+    const auto characters = co_await sCharDB.GetCharactersForAccount(_accountId);
+	const auto charCount = static_cast<uint32_t>(characters.size());
+
+	FL_LOG_DEBUG("WorldSession", "[{}] Sending SMSG_CHAR_ENUM with {} characters", _remoteAddress, charCount);
+
+    struct GuidData {
+        uint8_t g[8];
+        uint8_t gg[8];
+    };
+    std::vector<GuidData> guidData(charCount);
+    for (uint32_t i = 0; const auto& it : characters)
+    {
+        uint64_t guid = it.guid;
+        uint64_t guildGuid = 0; // Guilds not implemented yet
+
+        for (int b = 0; b < 8; ++b)
+        {
+            guidData[i].g[b] = static_cast<uint8_t>((guid >> (b * 8)) & 0xFF);
+            guidData[i].gg[b] = static_cast<uint8_t>((guildGuid >> (b * 8)) & 0xFF);
+        }
+        ++i;
+    }
+
     // SMSG_CHAR_ENUM (Cata 4.3.4 bit-packed format, 0 characters).
     // Layout mirrors TC EnumCharactersResult::Write():
     //   WriteBits(restrictionCount, 23)
@@ -572,11 +598,87 @@ async<void> WorldSession::SendCharEnum()
     //   WriteBits(charCount, 17)
     //   FlushBits()
     //   [per-character data — omitted when charCount=0]
-    WorldPacket data(SMSG_CHAR_ENUM);
-    data.WriteBits(0, 23);   // FactionChangeRestrictions count
-    data.WriteBit(true);     // Success
-    data.WriteBits(0, 17);   // Characters count
+    data.WriteBits(0, 23);         // FactionChangeRestrictions count
+    data.WriteBit(true);           // Success
+    data.WriteBits(charCount, 17); // Characters count
+    for (uint32_t i = 0; const auto& ch : characters)
+    {
+        auto& gd = guidData[i];
+
+        // Scrambled GUID bits (Exact order from TCPP CharacterPackets.cpp)
+        data.WriteBit(gd.g[3] != 0);
+        data.WriteBit(gd.gg[1] != 0);
+        data.WriteBit(gd.gg[7] != 0);
+        data.WriteBit(gd.gg[2] != 0);
+        data.WriteBits(static_cast<uint32_t>(ch.name.length()), 7);
+        data.WriteBit(gd.g[4] != 0);
+        data.WriteBit(gd.g[7] != 0);
+        data.WriteBit(gd.gg[3] != 0);
+        data.WriteBit(gd.g[5] != 0);
+        data.WriteBit(gd.gg[6] != 0);
+        data.WriteBit(gd.g[1] != 0);
+        data.WriteBit(gd.gg[5] != 0);
+        data.WriteBit(gd.gg[4] != 0);
+        data.WriteBit(ch.firstLogin);
+        data.WriteBit(gd.g[0] != 0);
+        data.WriteBit(gd.g[2] != 0);
+        data.WriteBit(gd.g[6] != 0);
+        data.WriteBit(gd.gg[0] != 0);
+        ++i;
+    }
     data.FlushBits();
+
+    for (uint32_t i = 0; const auto& ch : characters)
+    {
+        auto& gd = guidData[i];
+
+        data << ch.char_class;
+        // Equipment: 23 visual item slots
+        for (int slot = 0; slot < 23; ++slot)
+        {
+            data<< uint8_t(0);  // InvType
+            data<< uint32_t(0); // DisplayID
+            data<< uint32_t(0); // DisplayEnchantID
+        }
+
+        data << uint32_t(0);                // PetCreatureFamilyID
+        data.WriteByteSeq(gd.gg[2]);        // GuildGUID[2]
+        data << uint8_t(0);                 // ListPosition
+        data << uint8_t(ch.hairStyle);
+        data.WriteByteSeq(gd.gg[3]);        // GuildGUID[3]
+        data << uint32_t(0);                // PetCreatureDisplayID
+        data << uint32_t(ch.characterFlags);
+        data << uint8_t(ch.hairColor);
+        data.WriteByteSeq(gd.g[4]);         // Guid[4]
+        data << int32_t(ch.mapId);
+        data.WriteByteSeq(gd.gg[5]);        // GuildGUID[5]
+        data << float(ch.z);
+        data.WriteByteSeq(gd.gg[6]);        // GuildGUID[6]
+        data << uint32_t(0);                // PetExperienceLevel
+        data.WriteByteSeq(gd.g[3]);         // Guid[3]
+        data << float(ch.y);
+        data << uint32_t(ch.customizationFlags);
+        data << uint8_t(ch.facialHair);
+        data.WriteByteSeq(gd.g[7]);         // Guid[7]
+        data << uint8_t(ch.gender);
+        data.Append(ch.name.data(), ch.name.size());
+        data << uint8_t(ch.face);
+        data.WriteByteSeq(gd.g[0]);         // Guid[0]
+        data.WriteByteSeq(gd.g[2]);         // Guid[2]
+        data.WriteByteSeq(gd.gg[1]);        // GuildGUID[1]
+        data.WriteByteSeq(gd.gg[7]);        // GuildGUID[7]
+        data << float(ch.x);
+        data << uint8_t(ch.skin);
+        data << uint8_t(ch.race);
+        data << uint8_t(ch.level);
+        data.WriteByteSeq(gd.g[6]);         // Guid[6]
+        data.WriteByteSeq(gd.gg[4]);        // GuildGUID[4]
+        data.WriteByteSeq(gd.gg[0]);        // GuildGUID[0]
+        data.WriteByteSeq(gd.g[5]);         // Guid[5]
+        data.WriteByteSeq(gd.g[1]);         // Guid[1]
+        data << int32_t(ch.zoneId);
+        ++i;
+    }
 
     co_await SendPacket(data);
     FL_LOG_INFO("WorldSession", "[{}] SMSG_CHAR_ENUM sent (empty list)", _remoteAddress);
@@ -592,19 +694,30 @@ async<void> WorldSession::HandleCharCreate(WorldPacket& packet)
 
         FL_LOG_INFO("WorldSession", "[{}] CMSG_CHAR_CREATE for '{}' (Race: {}, Class: {})", _remoteAddress, name, race, _class);
 
+        auto SendCharCreateResponse = [this](ResponseCodes code) -> async<void>
+        {
+            WorldPacket response(SMSG_CHAR_CREATE);
+            response << code;
+            co_await SendPacket(response);
+        };
+
+        auto name_free = co_await sCharDB.IsNameAvailable(name);
+        if (!name_free)
+        {
+            FL_LOG_WARNING("WorldSession", "[{}] Character name '{}' is already taken", _remoteAddress, name);
+            co_return co_await SendCharCreateResponse(ResponseCodes::CHAR_CREATE_NAME_IN_USE);
+		}
+
+		characters character{0, _accountId, name, race, _class, gender, skin, face, hairStyle, hairColor, facialHair, 1, 0, 0};
+		auto opt_created_character = co_await sCharDB.CreateCharacter(character);
+        if (!opt_created_character)
+        {
+            FL_LOG_ERROR("WorldSession", "[{}] Failed to create character '{}' in database", _remoteAddress, name);
+            co_return co_await SendCharCreateResponse(ResponseCodes::CHAR_CREATE_FAILED);
+		}
+
         //bool success = _charService->CreateCharacter(_accountId, name, race, klass, gender, skin, face, hairStyle, hairColor, facialHair);
-        bool success = true;
-
-        WorldPacket response(SMSG_CHAR_CREATE);
-        // 4.3.4 SMSG_CHAR_CREATE Response
-
-        // CHAR_CREATE_SUCCESS=0x31,
-        // CHAR_CREATE_ERROR=0x32 (Cata 4.3.4)
-        ResponseCodes resultCode = success ? ResponseCodes::CHAR_CREATE_SUCCESS : ResponseCodes::CHAR_CREATE_ERROR;
-        response << resultCode;
-
-        co_await SendPacket(response);
-        FL_LOG_INFO("WorldSession", "[{}] SMSG_CHAR_CREATE sent result: {}", _remoteAddress, success ? "SUCCESS" : "FAIL");
+		co_return co_await SendCharCreateResponse(ResponseCodes::CHAR_CREATE_SUCCESS);
     }
     catch (const std::exception& e)
     {

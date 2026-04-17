@@ -279,6 +279,13 @@ namespace Fireland::Utils
             }
         }
 
+		// Write a byte as a single bit (1 if nonzero, 0 if zero) for the bit buffer.
+        void WriteByteSeq(uint8_t b)
+        {
+            if (b != 0)
+                *this << uint8_t(b ^ 1);
+        }
+
         // -- Accessors --
         std::span<const uint8_t> Data() const noexcept { return _storage; }
         const uint8_t* RawData() const noexcept { return _storage.data(); }
