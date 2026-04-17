@@ -22,6 +22,8 @@
 #include <Utils/StringUtils.h>
 #include <Utils/ByteBuffer.h>
 
+#include <Database/Auth/AuthWrapper.h>
+
 using namespace Fireland::Auth;
 using namespace Fireland::Utils::Async;
 using namespace Fireland::Utils;
@@ -29,9 +31,8 @@ using ByteBuffer = Fireland::Utils::ByteBuffer;
 
 // ---- Construction ----------------------------------------------------------
 
-AuthSession::AuthSession(boost::asio::ip::tcp::socket socket, Fireland::Database::Auth::AuthWrapper& dbPool) noexcept
+AuthSession::AuthSession(boost::asio::ip::tcp::socket socket) noexcept
     : _socket{std::move(socket)}
-    , _dbPool{dbPool}
 	, _status{ AuthStatus::LOGON_CHALLENGE }
     , _remoteAddress{"<unknown>"}
     , _handlers{}
@@ -139,11 +140,11 @@ async<void> AuthSession::HandleLogonChallenge(AuthPacket packet)
     _username = StringUtils::ToUpper(auth_c.account_name);
     FL_LOG_INFO("AuthSession", "[{}] Logon challenge for '{}' (raw: '{}', len={})", _remoteAddress, _username, auth_c.account_name, auth_c.account_len);
 
-    auto account = co_await _dbPool.GetAccountByUsername(_username);
+    auto account = co_await sAuthDB.GetAccountByUsername(_username);
     if (!account)
     {
         FL_LOG_WARNING("AuthSession", "[{}] Unknown account '{}'", _remoteAddress, _username);
-        co_await SendChallengeError(AuthResult::FAIL_UNKNOWN_ACCOUNT);
+        co_await SendChallengeError(ResponseCodes::AUTH_UNKNOWN_ACCOUNT);
         co_return;
     }
 
@@ -151,7 +152,7 @@ async<void> AuthSession::HandleLogonChallenge(AuthPacket packet)
     if (account->salt.size() != 32 || account->verifier.empty())
     {
         FL_LOG_ERROR("AuthSession", "[{}] account '{}' has invalid credentials in DB (salt={} bytes, verifier={} bytes)", _remoteAddress, _username, account->salt.size(), account->verifier.size());
-        co_await SendChallengeError(AuthResult::FAIL_UNKNOWN_ACCOUNT);
+        co_await SendChallengeError(ResponseCodes::AUTH_UNKNOWN_ACCOUNT);
         co_return;
     }
 
@@ -173,7 +174,7 @@ async<void> AuthSession::HandleLogonChallenge(AuthPacket packet)
     ByteBuffer response(119);
     response << AuthOpcode::CMD_AUTH_LOGON_CHALLENGE // cmd
              << uint8_t(0x00)                                            // unk
-             << AuthResult::SUCCESS                                      // error
+             << ResponseCodes::RESPONSE_SUCCESS                          // error
              << B.AsByteArray(32)                                        // B (32 bytes)
              << static_cast<uint8_t>(g_bytes.size()) << g_bytes          // g_len + g
              << static_cast<uint8_t>(N_bytes.size()) << N_bytes          // N_len + N
@@ -214,7 +215,7 @@ async<void> AuthSession::HandleLogonProof(AuthPacket packet)
 
         ByteBuffer fail(4);
         fail << AuthOpcode::CMD_AUTH_LOGON_PROOF
-             << AuthResult::FAIL_INCORRECT_PASSWORD
+             << ResponseCodes::AUTH_INCORRECT_PASSWORD
              << uint8_t(0x03) << uint8_t(0x00);
 
         co_await boost::asio::async_write(_socket, boost::asio::buffer(fail.Storage()), boost::asio::use_awaitable);
@@ -225,14 +226,14 @@ async<void> AuthSession::HandleLogonProof(AuthPacket packet)
     _authenticated = true;
 
     // Store session key for future reconnects and world server handoff
-    co_await _dbPool.StoreSessionKey(_accountId, _srp.GetSessionKey());
+    co_await sAuthDB.StoreSessionKey(_accountId, _srp.GetSessionKey());
 
     // Build success response
     auto& M2 = _srp.GetServerProof();
 
     ByteBuffer response(32);
     response << AuthOpcode::CMD_AUTH_LOGON_PROOF // cmd
-             << AuthResult::SUCCESS              // error
+             << ResponseCodes::RESPONSE_SUCCESS  // error
              << M2;                              // M2 (20 bytes)
     response.Pad(10); // account_flags (uint32) + survey_id (uint32) + login_flags (uint16)
 
@@ -273,7 +274,7 @@ async<void> AuthSession::HandleReconnectChallenge(AuthPacket packet)
     FL_LOG_INFO("AuthSession", "[{}] Reconnect challenge for '{}'", _remoteAddress, _username);
 
     // Look up stored session key
-    auto storedKey = co_await _dbPool.LookupSessionKey(_accountId);
+    auto storedKey = co_await sAuthDB.LookupSessionKey(_accountId);
     if (!storedKey)
     {
         FL_LOG_WARNING("AuthSession", "[{}] Reconnect failed: no session key stored for '{}'",
@@ -281,7 +282,7 @@ async<void> AuthSession::HandleReconnectChallenge(AuthPacket packet)
 
         ByteBuffer fail(3);
         fail << AuthOpcode::CMD_AUTH_RECONNECT_CHALLENGE
-             << AuthResult::FAIL_UNKNOWN_ACCOUNT;
+             << ResponseCodes::AUTH_UNKNOWN_ACCOUNT;
         co_await boost::asio::async_write(
             _socket, boost::asio::buffer(fail.Storage()),
             boost::asio::use_awaitable);
@@ -302,7 +303,7 @@ async<void> AuthSession::HandleReconnectChallenge(AuthPacket packet)
     // Response: cmd(1) + error(1) + reconnect_rand(16) + zeros(16)
     ByteBuffer response(34);
     response << AuthOpcode::CMD_AUTH_RECONNECT_CHALLENGE
-             << AuthResult::SUCCESS;
+             << ResponseCodes::RESPONSE_SUCCESS;
     response.Append(_reconnectRand.data(), _reconnectRand.size());
     response.Pad(16);  // 16 zero bytes
 
@@ -333,7 +334,7 @@ async<void> AuthSession::HandleReconnectProof(AuthPacket packet)
     FL_LOG_TRACE("AuthSession", "[{}] R2: {}", _remoteAddress, StringUtils::HexStr(R2));
 
     // Look up stored session key
-    auto storedKey = co_await _dbPool.LookupSessionKey(_accountId);
+    auto storedKey = co_await sAuthDB.LookupSessionKey(_accountId);
     if (!storedKey)
     {
         FL_LOG_WARNING("AuthSession", "[{}] Reconnect proof failed: no session key for '{}'",
@@ -341,7 +342,7 @@ async<void> AuthSession::HandleReconnectProof(AuthPacket packet)
 
         ByteBuffer fail(2);
         fail << AuthOpcode::CMD_AUTH_RECONNECT_PROOF
-             << AuthResult::FAIL_UNKNOWN_ACCOUNT;
+             << ResponseCodes::AUTH_UNKNOWN_ACCOUNT;
         co_await boost::asio::async_write(
             _socket, boost::asio::buffer(fail.Storage()),
             boost::asio::use_awaitable);
@@ -363,7 +364,7 @@ async<void> AuthSession::HandleReconnectProof(AuthPacket packet)
 
         ByteBuffer fail(2);
         fail << AuthOpcode::CMD_AUTH_RECONNECT_PROOF
-             << AuthResult::FAIL_INCORRECT_PASSWORD;
+             << ResponseCodes::AUTH_INCORRECT_PASSWORD;
         co_await boost::asio::async_write(
             _socket, boost::asio::buffer(fail.Storage()),
             boost::asio::use_awaitable);
@@ -376,7 +377,7 @@ async<void> AuthSession::HandleReconnectProof(AuthPacket packet)
     // Response: cmd(1) + error(1) + padding(2)
     ByteBuffer response(4);
     response << AuthOpcode::CMD_AUTH_RECONNECT_PROOF
-             << AuthResult::SUCCESS;
+             << ResponseCodes::RESPONSE_SUCCESS;
     response.Pad(2);
 
 	_status = AuthStatus::WAIT_FOR_REALM_LIST;
@@ -437,7 +438,7 @@ async<void> AuthSession::HandleRealmList(AuthPacket packet)
 
 // ---- Error helpers ---------------------------------------------------------
 
-async<void> AuthSession::SendChallengeError(AuthResult error)
+async<void> AuthSession::SendChallengeError(ResponseCodes error)
 {
     ByteBuffer response(3);
     response << AuthOpcode::CMD_AUTH_LOGON_CHALLENGE

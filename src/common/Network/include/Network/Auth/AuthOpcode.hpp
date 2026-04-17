@@ -28,23 +28,6 @@ namespace Fireland::Auth
         CMD_AUTH_RECONNECT_PROOF,
         CMD_REALM_LIST,
         NONE);
-        
-    enum class AuthResult : uint8_t
-    {
-        SUCCESS                   = 0x00,
-        FAIL_UNKNOWN_ACCOUNT      = 0x04,
-        FAIL_INCORRECT_PASSWORD   = 0x05,
-        FAIL_BANNED               = 0x03,
-        FAIL_SUSPENDED            = 0x0C,
-        FAIL_VERSION_INVALID      = 0x09,
-    };
-    BOOST_DESCRIBE_ENUM(AuthResult,
-        SUCCESS,
-        FAIL_UNKNOWN_ACCOUNT,
-        FAIL_INCORRECT_PASSWORD,
-        FAIL_BANNED,
-        FAIL_SUSPENDED,
-        FAIL_VERSION_INVALID);
 
     // ---- Wire structures (packed, little-endian) -------------------------------
 

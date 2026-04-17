@@ -20,10 +20,10 @@
 #include <Crypto/SHA1.h>
 #include <Crypto/WorldCrypt.h>
 
-#include <Database/Auth/AuthWrapper.h>
-
 #include <Utils/Async.hpp>
 #include <Utils/ByteBuffer.h>
+
+#include <Shared/SharedDefines.hpp>
 
 #include <Network/World/WorldOpcode.hpp>
 #include <Network/World/WorldPacket.hpp>
@@ -33,8 +33,7 @@ namespace Fireland::World
     class WorldSession : public std::enable_shared_from_this<WorldSession>
     {
     public:
-        explicit WorldSession(boost::asio::ip::tcp::socket socket,
-                              Fireland::Database::Auth::AuthWrapper& authdbPool) noexcept;
+        explicit WorldSession(boost::asio::ip::tcp::socket socket) noexcept;
         ~WorldSession() noexcept;
 
         void Start();
@@ -49,7 +48,7 @@ namespace Fireland::World
         // ---- Auth handshake ----
         Utils::Async::async<void> SendAuthChallenge();
         Utils::Async::async<void> HandleAuthSession();
-        Utils::Async::async<void> SendAuthResponse(AuthResponseResult result);
+        Utils::Async::async<void> SendAuthResponse(ResponseCodes result);
         Utils::Async::async<void> SendAddonInfo();
         Utils::Async::async<void> SendClientCacheVersion();
         Utils::Async::async<void> SendTutorialFlags();
@@ -73,6 +72,10 @@ namespace Fireland::World
         Utils::Async::async<void> SendCharEnum();
         Utils::Async::async<void> HandlePing(WorldPacket& packet);
 
+        // ---- Characters ----
+		Utils::Async::async<void> HandleCharCreate(WorldPacket& packet);
+        Utils::Async::async<void> HandleCharDelete(WorldPacket& packet);
+        Utils::Async::async<void> HandlePlayerLogin(WorldPacket& packet);
         // ---- Send / receive helpers ----
 
         /// Read a complete CMSG (header + payload) from the socket.
@@ -83,7 +86,6 @@ namespace Fireland::World
         Utils::Async::async<void> SendPacket(const WorldPacket& packet);
 
         boost::asio::ip::tcp::socket     _socket;
-        Fireland::Database::Auth::AuthWrapper& _authdbPool;
         std::string                      _remoteAddress;
 
         std::string  _username;

@@ -16,6 +16,8 @@
 #include <Utils/Log.h>
 #include <Utils/StringUtils.h>
 
+#include <Database/Auth/AuthWrapper.h>
+
 using namespace Fireland::World;
 using namespace Fireland::Utils;
 using namespace Fireland::Utils::Async;
@@ -23,10 +25,8 @@ using ByteBuffer = Fireland::Utils::ByteBuffer;
 
 // ---- Construction ----------------------------------------------------------
 
-WorldSession::WorldSession(boost::asio::ip::tcp::socket socket,
-                           Fireland::Database::Auth::AuthWrapper& authdbPool) noexcept
+WorldSession::WorldSession(boost::asio::ip::tcp::socket socket) noexcept
     : _socket(std::move(socket))
-    , _authdbPool(authdbPool)
     , _remoteAddress{"<unknown>"}
     , _username{}
     , _accountId{0}
@@ -230,17 +230,17 @@ async<void> WorldSession::HandleAuthSession()
     FL_LOG_DEBUG("WorldSession", "[{}] Client digest: {}", _remoteAddress, StringUtils::HexStr(std::span<const uint8_t>(digest)));
 
     // Find in DB: look up the session key for this account, which should have been stored by the authserver.
-    auto accountOpt = co_await _authdbPool.GetAccountByUsername(_username);
+    auto accountOpt = co_await sAuthDB.GetAccountByUsername(_username);
     if (!accountOpt)    {
         FL_LOG_WARNING("WorldSession", "[{}] No account found for '{}'", _remoteAddress, _username);
-        co_await SendAuthResponse(AuthResponseResult::AUTH_UNKNOWN_ACCOUNT);
+        co_await SendAuthResponse(ResponseCodes::AUTH_UNKNOWN_ACCOUNT);
         co_return;
     }
-    auto K = co_await _authdbPool.LookupSessionKey(accountOpt->id);
+    auto K = co_await sAuthDB.LookupSessionKey(accountOpt->id);
     if (!K || K->size() != 40)
     {
         FL_LOG_WARNING("WorldSession", "[{}] No session key for '{}' — ensure authserver stored the key", _remoteAddress, _username);
-        co_await SendAuthResponse(AuthResponseResult::AUTH_UNKNOWN_ACCOUNT);
+        co_await SendAuthResponse(ResponseCodes::AUTH_UNKNOWN_ACCOUNT);
         co_return;
     }
 
@@ -260,7 +260,7 @@ async<void> WorldSession::HandleAuthSession()
     if (digest != expected)
     {
         FL_LOG_WARNING("WorldSession", "[{}] Auth digest mismatch for '{}'", _remoteAddress, _username);
-        co_await SendAuthResponse(AuthResponseResult::AUTH_INCORRECT_PASSWORD);
+        co_await SendAuthResponse(ResponseCodes::AUTH_INCORRECT_PASSWORD);
         co_return;
     }
 
@@ -275,7 +275,7 @@ async<void> WorldSession::HandleAuthSession()
     // 5. Send Authentication Handshake Sequence for 4.3.4 (15595)
     // Precise order and content in 4.3.4 is critical for the client to proceed to
     // Character Enum.
-    co_await SendAuthResponse(AuthResponseResult::AUTH_OK);
+    co_await SendAuthResponse(ResponseCodes::AUTH_OK);
     /*co_await SendAddonInfo();
     co_await SendClientCacheVersion();
     co_await SendTutorialFlags();
@@ -294,7 +294,7 @@ async<void> WorldSession::HandleAuthSession()
     // here can cause some 15595 clients to hang.
 }
 
-async<void> WorldSession::SendAuthResponse(AuthResponseResult result)
+async<void> WorldSession::SendAuthResponse(ResponseCodes result)
 {
     WorldPacket response(SMSG_AUTH_RESPONSE);
 
@@ -306,7 +306,7 @@ async<void> WorldSession::SendAuthResponse(AuthResponseResult result)
     //   [SuccessInfo fields — only present when hasSuccessInfo]
     //   uint8 Result
     //   [uint32 WaitCount — only present when hasWaitInfo]
-    bool hasSuccessInfo = (result == AuthResponseResult::AUTH_OK);
+    bool hasSuccessInfo = (result == ResponseCodes::AUTH_OK);
     bool hasWaitInfo    = false; // queue not implemented
 
     response.WriteBit(hasWaitInfo);
@@ -492,11 +492,11 @@ async<void> WorldSession::PacketLoop()
     while (_socket.is_open())
     {
         auto packet = co_await ReadClientPacket();
+		WorldServerOpcodes opcode = static_cast<WorldServerOpcodes>(packet.opcode());
 
-        FL_LOG_DEBUG("WorldSession", "[{}] {} (payload={} bytes)",
-            _remoteAddress, packet.opcodeName(), packet.Size());
+        FL_LOG_DEBUG("WorldSession", "[{}] [{}]:{} (payload={} bytes)", _remoteAddress, Fireland::Utils::Describe::to_string(opcode), packet.opcodeName(), packet.Size());
 
-        switch (packet.opcode())
+        switch (opcode)
         {
             case CMSG_READY_FOR_ACCOUNT_DATA_TIMES:
                 co_await HandleReadyForAccountDataTimes(packet);
@@ -511,8 +511,16 @@ async<void> WorldSession::PacketLoop()
                 co_await HandlePing(packet);
                 break;
             case CMSG_LOG_DISCONNECT:
-                FL_LOG_INFO("WorldSession", "[{}] Client sent CMSG_LOG_DISCONNECT", _remoteAddress);
                 co_return;
+            case CMSG_CHAR_CREATE:
+                co_await HandleCharCreate(packet);
+				break;
+            case CMSG_CHAR_DELETE:
+                co_await HandleCharDelete(packet);
+                break;
+            case CMSG_PLAYER_LOGIN:
+                co_await HandlePlayerLogin(packet);
+                break;
             default:
                 FL_LOG_DEBUG("WorldSession", "[{}] Unhandled opcode {} ({} bytes)",
                     _remoteAddress, packet.opcodeName(), packet.Size());
@@ -574,6 +582,93 @@ async<void> WorldSession::SendCharEnum()
     FL_LOG_INFO("WorldSession", "[{}] SMSG_CHAR_ENUM sent (empty list)", _remoteAddress);
 }
 
+async<void> WorldSession::HandleCharCreate(WorldPacket& packet)
+{
+    try
+    {
+        std::string name = packet.ReadString();
+        uint8_t race, _class, gender, skin, face, hairStyle, hairColor, facialHair, outfitId;
+        packet >> race >> _class >> gender >> skin >> face >> hairStyle >> hairColor >> facialHair >> outfitId;
+
+        FL_LOG_INFO("WorldSession", "[{}] CMSG_CHAR_CREATE for '{}' (Race: {}, Class: {})", _remoteAddress, name, race, _class);
+
+        //bool success = _charService->CreateCharacter(_accountId, name, race, klass, gender, skin, face, hairStyle, hairColor, facialHair);
+        bool success = true;
+
+        WorldPacket response(SMSG_CHAR_CREATE);
+        // 4.3.4 SMSG_CHAR_CREATE Response
+
+        // CHAR_CREATE_SUCCESS=0x31,
+        // CHAR_CREATE_ERROR=0x32 (Cata 4.3.4)
+        ResponseCodes resultCode = success ? ResponseCodes::CHAR_CREATE_SUCCESS : ResponseCodes::CHAR_CREATE_ERROR;
+        response << resultCode;
+
+        co_await SendPacket(response);
+        FL_LOG_INFO("WorldSession", "[{}] SMSG_CHAR_CREATE sent result: {}", _remoteAddress, success ? "SUCCESS" : "FAIL");
+    }
+    catch (const std::exception& e)
+    {
+        FL_LOG_ERROR("WorldSession", "[{}] Error handling CMSG_CHAR_CREATE: {}", _remoteAddress, e.what());
+	}
+}
+
+async<void> WorldSession::HandleCharDelete(WorldPacket& packet)
+{
+	uint64_t guid = packet.Read<uint64_t>();
+
+    FL_LOG_DEBUG("WorldSession", "[{}] CMSG_CHAR_DELETE for GUID: {}", _remoteAddress, guid);
+
+    //bool success = _charService->DeleteCharacter(static_cast<uint32>(guid), _accountId);
+    bool success = true;
+
+    WorldPacket response(SMSG_CHAR_DELETE);
+    // 4.3.4 SMSG_CHAR_DELETE Response
+    // Success = 0x47,
+    // Error = 0x48 (Legacy but usually works)
+    response << static_cast<uint8_t>(success ? 0x47 : 0x48);
+
+    co_await SendPacket(response);
+    FL_LOG_INFO("WorldSession", "[{}] SMSG_CHAR_DELETE sent result: {}", _remoteAddress, success ? "SUCCESS" : "FAIL");
+}
+
+async<void> WorldSession::HandlePlayerLogin(WorldPacket& packet)
+{
+    uint64_t guid = packet.Read<uint64_t>();
+    FL_LOG_INFO("WorldSession", "[{}] CMSG_PLAYER_LOGIN for GUID: {}", _remoteAddress, guid);
+    //_playerGuid = guid;
+
+    // 1. Send SMSG_LOGIN_VERIFY_WORLD
+    WorldPacket verify(SMSG_LOGIN_VERIFY_WORLD);
+    verify << static_cast<uint32_t>(0);   // Map ID (0 = Azeroth)
+    verify << static_cast<float>(0.0f); // X
+    verify << static_cast<float>(0.0f); // Y
+    verify << static_cast<float>(0.0f); // Z
+    verify << static_cast<float>(0.0f); // O
+    co_await SendPacket(verify);
+
+    // 2. Send SMSG_TUTORIAL_FLAGS (all zero)
+    co_await SendTutorialFlags();
+
+    // 3. Send SMSG_TIME_SYNC_REQ
+    WorldPacket timeSync(SMSG_TIME_SYNC_REQ);
+    timeSync << static_cast<uint32_t>(0); // Counter
+    co_await SendPacket(timeSync);
+
+    // 4. Send Initial Object Update
+    //SendInitialObjectUpdate(guid);
+
+    // 5. Send Account Data Times
+    co_await SendAccountDataTimes();
+
+    // 6. Set Time Speed
+    //SendLoginSetTimeSpeed();
+
+    // 7. Send MOTD (Correct bit-packed format)
+    co_await SendMotd();
+
+    FL_LOG_INFO("WorldSession", "[{}] Handshake for Player Login completed for GUID: {}", _remoteAddress, guid);
+}
+
 // ---- Helpers ---------------------------------------------------------------
 
 async<WorldPacket> WorldSession::ReadClientPacket()
@@ -596,9 +691,7 @@ async<WorldPacket> WorldSession::ReadClientPacket()
         std::size_t payloadSize = wireSize - 4;
         constexpr std::size_t MAX_PAYLOAD = 64 * 1024;
         if (payloadSize > MAX_PAYLOAD)
-            throw std::runtime_error(
-                std::format("Packet {}: payload too large ({} bytes)",
-                    packet.opcodeName(), payloadSize));
+            throw std::runtime_error(std::format("Packet {}: payload too large ({} bytes)", packet.opcodeName(), payloadSize));
 
         std::vector<uint8_t> payloadBuf(payloadSize);
         auto readedPayload = co_await boost::asio::async_read(_socket, boost::asio::buffer(payloadBuf), boost::asio::use_awaitable);

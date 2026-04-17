@@ -50,6 +50,8 @@ void connection_pool_wrapper::start(connection_pool_wrapper_options options) noe
 
 void connection_pool_wrapper::stop() noexcept
 {
+	if (!_pool) return;
+
     FL_LOG_INFO("Database", "> stopping database connection pool...");
 
     _pool->cancel();

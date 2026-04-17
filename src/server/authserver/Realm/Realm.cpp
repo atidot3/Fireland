@@ -1,7 +1,9 @@
 #include "Realm.h"
 
 #include <Shared/Realm/Realmlist.h>
+
 #include <Utils/Log.h>
+#include <Database/Auth/AuthWrapper.h>
 
 #include <boost/asio/bind_cancellation_slot.hpp>
 
@@ -10,10 +12,10 @@ using namespace std::chrono_literals;
 
 std::unique_ptr<Realm> Realm::instance_ = nullptr;
 
-void Realm::Init(boost::asio::any_io_executor exec, Fireland::Database::Auth::AuthWrapper& authWrapper)
+void Realm::Init(boost::asio::any_io_executor exec)
 {
     if (!instance_)
-        instance_ = std::unique_ptr<Realm>(new Realm(exec, authWrapper));
+        instance_ = std::unique_ptr<Realm>(new Realm(exec));
 }
 
 Realm& Realm::Instance()
@@ -31,9 +33,8 @@ void Realm::Shutdown()
     }
 }
 
-Realm::Realm(boost::asio::any_io_executor exec, Fireland::Database::Auth::AuthWrapper& authWrapper)
+Realm::Realm(boost::asio::any_io_executor exec)
     : _strand(boost::asio::make_strand(exec))
-    , _authWrapper(authWrapper)
     , _realms(std::make_shared<std::vector<realmlist>>())
 {
     _updateFuture = boost::asio::co_spawn(
@@ -58,7 +59,7 @@ Fireland::Utils::Async::async<void> Realm::realm_update()
 {
     auto safe_lambda = [this]() -> Fireland::Utils::Async::async<void>
     {
-        auto opt_db_realms = co_await _authWrapper.GetRealmlist();
+        auto opt_db_realms = co_await sAuthDB.GetRealmlist();
         if (opt_db_realms && opt_db_realms->size() > 0)
         {
             _realms = std::make_shared<std::vector<realmlist>>(std::move(opt_db_realms.value()));

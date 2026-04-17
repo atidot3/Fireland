@@ -146,11 +146,19 @@ namespace Fireland::Utils
         /// Read a length-prefixed string.
         std::string ReadString()
         {
-            auto len = Read<uint16_t>();
-            EnsureReadable(len);
-            std::string str(reinterpret_cast<const char*>(_storage.data() + _readPos), len);
-            _readPos += len;
-            return str;
+            auto begin = _storage.data() + _readPos;
+            auto end = _storage.data() + _storage.size();
+
+            auto it = std::find(begin, end, '\0');
+
+            std::string result(begin, it);
+
+            _readPos += std::distance(begin, it);
+            if (it != end) {
+                ++_readPos; // skip null terminator
+            }
+
+            return result;
         }
 
         /// Read a length-prefixed string with a specified length.

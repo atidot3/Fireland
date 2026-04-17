@@ -22,13 +22,13 @@
 
 #include <Network/TcpListener.h>
 
-#include <Database/connection_pool_wrapper.h>
+#include <Database/Auth/AuthWrapper.h>
 
 #include "WorldSession.h"
 
-Fireland::Utils::Async::async<void> async_main(Fireland::Utils::IoContext& thread_pool)
+Fireland::Utils::Async::async<bool> initiate_database(Fireland::Utils::IoContext& thread_pool)
 {
-	// Load database configuration and initialize the auth wrapper
+    // Load database configuration and initialize the auth wrapper
     Fireland::Database::connection_pool_wrapper_options dbOptions{
         sConfig.get<std::string>(DATABASE_USER),
         sConfig.get<std::string>(DATABASE_PASSWORD),
@@ -36,23 +36,34 @@ Fireland::Utils::Async::async<void> async_main(Fireland::Utils::IoContext& threa
         sConfig.get<std::string>(DATABASE_HOST),
         sConfig.get<uint16_t>(DATABASE_PORT)
     };
-    Fireland::Database::Auth::AuthWrapper authdbPool(thread_pool.Get(), dbOptions);
-    authdbPool.start();
-    if (!co_await authdbPool.ping())
+    Fireland::Database::Auth::AuthWrapper::Init(thread_pool.Get(), dbOptions);
+    sAuthDB.start();
+    if (!co_await sAuthDB.ping())
     {
         FL_LOG_ERROR("WorldServer", "Failed to connect to the database. Shutting down.");
-        authdbPool.stop();
+        sAuthDB.Shutdown();
         thread_pool.Stop();
-        co_return;
+        co_return false;
     }
 
+    co_return true;
+}
+
+Fireland::Utils::Async::async<void> async_main(Fireland::Utils::IoContext& thread_pool)
+{
+    // Initialize the database connection pool and verify connectivity before starting the server.
+    if (!co_await initiate_database(thread_pool))
+        co_return;
+
+    // Create the TCP listener with a session factory that constructs WorldSession instances.
     Fireland::Network::TcpListener<Fireland::World::WorldSession> listener(
         thread_pool,
-        [&authdbPool](boost::asio::ip::tcp::socket socket) {
-            return std::make_shared<Fireland::World::WorldSession>(std::move(socket), authdbPool);
+        [](boost::asio::ip::tcp::socket socket) {
+            return std::make_shared<Fireland::World::WorldSession>(std::move(socket));
         }
     );
 
+	// Set up signal handling for graceful shutdown on SIGINT and SIGTERM.
     boost::asio::signal_set signals(thread_pool.Get(), SIGINT, SIGTERM);
     signals.async_wait([&listener](const boost::system::error_code& ec, int signo)
     {
@@ -69,7 +80,7 @@ Fireland::Utils::Async::async<void> async_main(Fireland::Utils::IoContext& threa
     co_await listener.Listen(BIND_ADDRESS, BIND_PORT);
 
     signals.cancel();
-    authdbPool.stop();
+    sAuthDB.Shutdown();
     thread_pool.Stop();
 }
 

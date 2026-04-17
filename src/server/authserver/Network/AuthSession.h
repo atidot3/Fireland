@@ -17,9 +17,9 @@
 
 #include <Utils/Describe.hpp>
 #include <Network/Auth/AuthPacket.hpp>
+#include <Shared/SharedDefines.hpp>
 #include <Utils/Async.hpp>
 #include <Crypto/SRP6.h>
-#include <Database/Auth/AuthWrapper.h>
 
 enum class AuthStatus
 {
@@ -42,7 +42,7 @@ namespace Fireland::Auth
     class AuthSession : public std::enable_shared_from_this<AuthSession>
     {
     public:
-        explicit AuthSession(boost::asio::ip::tcp::socket socket, Fireland::Database::Auth::AuthWrapper& dbPool) noexcept;
+        explicit AuthSession(boost::asio::ip::tcp::socket socket) noexcept;
         ~AuthSession() noexcept;
 
         void Start();
@@ -54,11 +54,10 @@ namespace Fireland::Auth
         Utils::Async::async<void> HandleReconnectChallenge(AuthPacket packet);
         Utils::Async::async<void> HandleReconnectProof(AuthPacket packet);
         Utils::Async::async<void> HandleRealmList(AuthPacket packet);
-        Utils::Async::async<void> SendChallengeError(AuthResult error);
+        Utils::Async::async<void> SendChallengeError(ResponseCodes error);
 
     private:
         boost::asio::ip::tcp::socket                _socket;
-        Fireland::Database::Auth::AuthWrapper&      _dbPool;
         AuthStatus                                  _status;
         std::string                                 _remoteAddress;
         std::unordered_map<AuthOpcode, AuthHandler> _handlers;

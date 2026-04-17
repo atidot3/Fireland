@@ -128,40 +128,4 @@ constexpr uint8_t EXPANSION_CATACLYSM = 3;
 // Cataclysm expected build number
 constexpr uint16_t EXPECTED_BUILD = 15595;
 
-// ---- Auth response result codes (used in SMSG_AUTH_RESPONSE) ---------------
-
-enum class AuthResponseResult : uint8_t
-{
-    AUTH_OK                  = 0x0C,
-    AUTH_FAILED              = 0x01,
-    AUTH_REJECT              = 0x0E,
-    AUTH_BAD_SERVER_PROOF    = 0x02,
-    AUTH_UNAVAILABLE         = 0x03,
-    AUTH_SYSTEM_ERROR        = 0x04,
-    AUTH_BILLING_ERROR       = 0x05,
-    AUTH_BILLING_EXPIRED     = 0x06,
-    AUTH_VERSION_MISMATCH    = 0x07,
-    AUTH_UNKNOWN_ACCOUNT     = 0x08,
-    AUTH_INCORRECT_PASSWORD  = 0x09,
-    AUTH_SESSION_EXPIRED     = 0x0A,
-    AUTH_SERVER_SHUTTING_DOWN = 0x0B,
-    AUTH_WAIT_QUEUE          = 0x1B,
-};
-BOOST_DESCRIBE_ENUM(AuthResponseResult,
-    AUTH_OK,
-    AUTH_FAILED,
-    AUTH_REJECT,
-    AUTH_BAD_SERVER_PROOF,
-    AUTH_UNAVAILABLE,
-    AUTH_SYSTEM_ERROR,
-    AUTH_BILLING_ERROR,
-    AUTH_BILLING_EXPIRED,
-    AUTH_VERSION_MISMATCH,
-    AUTH_UNKNOWN_ACCOUNT,
-    AUTH_INCORRECT_PASSWORD,
-    AUTH_SESSION_EXPIRED,
-    AUTH_SERVER_SHUTTING_DOWN,
-    AUTH_WAIT_QUEUE);
-
-
 } // namespace Fireland::World

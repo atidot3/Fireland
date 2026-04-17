@@ -26,10 +26,39 @@ void db_err(const boost::mysql::error_with_diagnostics& e)
     FL_LOG_FATAL("Database", "> Diagnostics: server='{}', client='{}'", server_error, client_error);
 }
 
+std::unique_ptr<AuthWrapper> AuthWrapper::instance_ = nullptr;
+
+void AuthWrapper::Init(boost::asio::any_io_executor exec, connection_pool_wrapper_options options)
+{
+    if (!instance_)
+        instance_ = std::unique_ptr<AuthWrapper>(new AuthWrapper(exec, options));
+}
+
+AuthWrapper& AuthWrapper::Instance()
+{
+    return *instance_;
+}
+
+void AuthWrapper::Shutdown()
+{
+    if (instance_)
+    {
+		instance_->stop();
+        auto ptr = instance_.release();
+        delete ptr;
+        instance_.reset();
+    }
+}
+
 AuthWrapper::AuthWrapper(boost::asio::any_io_executor exec, connection_pool_wrapper_options options) noexcept
     : _options{ std::move(options) }
     , _connection_pool { exec}
 {
+}
+
+AuthWrapper::~AuthWrapper()
+{
+    stop();
 }
 
 void AuthWrapper::start()

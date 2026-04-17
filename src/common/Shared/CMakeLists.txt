@@ -7,6 +7,7 @@
 
 
 set(headers_files
+  include/Shared/SharedDefines.hpp
   include/Shared/Auth/Account.h
 
   include/Shared/Realm/Realmlist.h
