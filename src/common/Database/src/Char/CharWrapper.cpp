@@ -90,6 +90,19 @@ async<bool> CharWrapper::IsNameAvailable(std::string_view name) noexcept
     co_return result.value().rows().empty();
 }
 
+async<std::optional<characters>> CharWrapper::GetCharacterByGuid(uint32_t guid) noexcept
+{
+    auto result = co_await _connection_pool.async_execute<std::vector<characters>>(
+        "SELECT * FROM characters WHERE guid = ?", guid);
+    if (!result)
+    {
+        connection_pool_wrapper::db_err(result.error());
+        co_return std::nullopt;
+    }
+    if (result.value().empty()) co_return std::nullopt;
+    co_return result.value()[0];
+}
+
 Fireland::Utils::Async::async<std::vector<characters>> CharWrapper::GetCharactersForAccount(uint32_t accountid) noexcept
 {
     auto result = co_await _connection_pool.async_execute<std::vector<characters>>("SELECT * FROM characters WHERE account = ?", accountid);
@@ -113,4 +126,16 @@ Fireland::Utils::Async::async<std::optional<characters>> CharWrapper::CreateChar
     if (result.value().affected_rows() == 0) co_return std::nullopt;
     saved.guid = static_cast<uint64_t>(result.value().last_insert_id());
 	co_return saved;
+}
+
+Fireland::Utils::Async::async<bool> CharWrapper::DeleteCharacter(uint32_t guid, uint32_t accountid) noexcept
+{
+    auto result = co_await _connection_pool.async_execute<boost::mysql::results>(
+        "DELETE FROM characters WHERE guid = ? AND account = ?", guid, accountid);
+    if (!result)
+    {
+        connection_pool_wrapper::db_err(result.error());
+        co_return false;
+    }
+    co_return result.value().affected_rows() != 0;
 }

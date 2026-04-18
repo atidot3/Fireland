@@ -33,8 +33,10 @@ namespace Fireland::Database::Char
 
         // -- Characters operations
         Fireland::Utils::Async::async<bool> IsNameAvailable(std::string_view name) noexcept;
+        Fireland::Utils::Async::async<std::optional<characters>> GetCharacterByGuid(uint32_t guid) noexcept;
         Fireland::Utils::Async::async<std::vector<characters>> GetCharactersForAccount(uint32_t accountid) noexcept;
         Fireland::Utils::Async::async<std::optional<characters>> CreateCharacter(characters c) noexcept;
+        Fireland::Utils::Async::async<bool> DeleteCharacter(uint32_t guid, uint32_t accountid) noexcept;
     private:
         CharWrapper(boost::asio::any_io_executor executor, connection_pool_wrapper_options options) noexcept;
        

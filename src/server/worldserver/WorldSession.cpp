@@ -1,7 +1,9 @@
 #include "WorldSession.h"
 
 #include <cctype>
+#include <chrono>
 #include <cstring>
+#include <ctime>
 #include <format>
 #include <random>
 #include <stdexcept>
@@ -18,6 +20,8 @@
 
 #include <Database/Auth/AuthWrapper.h>
 #include <Database/Char/CharWrapper.h>
+
+#include <Game/Objects/UpdateData.h>
 
 using namespace Fireland::World;
 using namespace Fireland::Utils;
@@ -458,12 +462,10 @@ async<void> WorldSession::SendSetTimeZoneInformation()
 
 async<void> WorldSession::SendLearnedDanceMoves()
 {
-    WorldPacket data(SMSG_LEARNED_DANCE_MOVES);
-
-    data.WriteBits(0, 23); // Count (23 bits in Cata 4.3.4)
-    data.FlushBits();
+    WorldPacket data(SMSG_LEARNED_DANCE_MOVES, 8);
+    data << uint64_t(0);
     co_await SendPacket(data);
-    FL_LOG_INFO("WorldSession", "[{}] SMSG_LEARNED_DANCE_MOVES sent (0 moves, bit-packed)", _remoteAddress);
+    FL_LOG_INFO("WorldSession", "[{}] SMSG_LEARNED_DANCE_MOVES sent (0 moves)", _remoteAddress);
 }
 
 async<void> WorldSession::SendMotd()
@@ -471,17 +473,12 @@ async<void> WorldSession::SendMotd()
     WorldPacket motd(SMSG_MOTD);
     std::vector<std::string> lines = {"Bo0p !"};
 
-    motd.WriteBits(static_cast<uint32_t>(lines.size()), 4);
-    for (auto const &line : lines)
-        motd.WriteBits(static_cast<uint32_t>(line.length()), 11);
-    
-    motd.FlushBits();
-
-    for (auto const &line : lines)
-        motd.Append(line.data(), line.size());
+    motd << static_cast<int32_t>(lines.size());
+    for (auto const& line : lines)
+        motd << line; // WriteCString (null-terminated)
 
     co_await SendPacket(motd);
-    FL_LOG_INFO("WorldSession", "[{}] SMSG_MOTD sent (4.3.4 15595 Bit-packed)", _remoteAddress);
+    FL_LOG_INFO("WorldSession", "[{}] SMSG_MOTD sent", _remoteAddress);
 }
 
 // ---- Packet loop (post-auth) ------------------------------------------------
@@ -511,6 +508,8 @@ async<void> WorldSession::PacketLoop()
             case CMSG_PING:
                 co_await HandlePing(packet);
                 break;
+            case CMSG_TIME_SYNC_RESP:
+                break; // acknowledged, no reply needed
             case CMSG_LOG_DISCONNECT:
                 co_return;
             case CMSG_CHAR_CREATE:
@@ -521,6 +520,18 @@ async<void> WorldSession::PacketLoop()
                 break;
             case CMSG_PLAYER_LOGIN:
                 co_await HandlePlayerLogin(packet);
+                break;
+            case CMSG_MESSAGECHAT:
+                co_await HandleMessageChat(packet);
+                break;
+            case CMSG_SET_ACTIVE_MOVER:
+                break; // client ACK of SMSG_MOVE_SET_ACTIVE_MOVER, no reply needed
+            case MSG_MOVE_HEARTBEAT:
+            case MSG_MOVE_START_FORWARD:
+            case MSG_MOVE_START_BACKWARD:
+            case MSG_MOVE_STOP:
+            case MSG_MOVE_SET_FACING:
+                co_await HandleMovement(packet);
                 break;
             default:
                 FL_LOG_DEBUG("WorldSession", "[{}] Unhandled opcode {} ({} bytes)",
@@ -708,7 +719,7 @@ async<void> WorldSession::HandleCharCreate(WorldPacket& packet)
             co_return co_await SendCharCreateResponse(ResponseCodes::CHAR_CREATE_NAME_IN_USE);
 		}
 
-		characters character{0, _accountId, name, race, _class, gender, skin, face, hairStyle, hairColor, facialHair, 1, 0, 0};
+		characters character{0, _accountId, name, race, _class, gender, skin, face, hairStyle, hairColor, facialHair, 1, 12, 0, -8949.95f, -132.493f, 83.5312f};
 		auto opt_created_character = co_await sCharDB.CreateCharacter(character);
         if (!opt_created_character)
         {
@@ -731,14 +742,11 @@ async<void> WorldSession::HandleCharDelete(WorldPacket& packet)
 
     FL_LOG_DEBUG("WorldSession", "[{}] CMSG_CHAR_DELETE for GUID: {}", _remoteAddress, guid);
 
-    //bool success = _charService->DeleteCharacter(static_cast<uint32>(guid), _accountId);
-    bool success = true;
+    bool success = co_await sCharDB.DeleteCharacter(guid, _accountId);
 
     WorldPacket response(SMSG_CHAR_DELETE);
     // 4.3.4 SMSG_CHAR_DELETE Response
-    // Success = 0x47,
-    // Error = 0x48 (Legacy but usually works)
-    response << static_cast<uint8_t>(success ? 0x47 : 0x48);
+    response << static_cast<uint8_t>(success ? ResponseCodes::CHAR_DELETE_SUCCESS : ResponseCodes::CHAR_DELETE_FAILED);
 
     co_await SendPacket(response);
     FL_LOG_INFO("WorldSession", "[{}] SMSG_CHAR_DELETE sent result: {}", _remoteAddress, success ? "SUCCESS" : "FAIL");
@@ -746,40 +754,320 @@ async<void> WorldSession::HandleCharDelete(WorldPacket& packet)
 
 async<void> WorldSession::HandlePlayerLogin(WorldPacket& packet)
 {
-    uint64_t guid = packet.Read<uint64_t>();
-    FL_LOG_INFO("WorldSession", "[{}] CMSG_PLAYER_LOGIN for GUID: {}", _remoteAddress, guid);
-    //_playerGuid = guid;
+    // CMSG_PLAYER_LOGIN sends a scrambled packed GUID (order: 2,3,0,6,4,5,1,7)
+    std::array<bool, 8> hasByte{};
+    hasByte[2] = packet.ReadBit();
+    hasByte[3] = packet.ReadBit();
+    hasByte[0] = packet.ReadBit();
+    hasByte[6] = packet.ReadBit();
+    hasByte[4] = packet.ReadBit();
+    hasByte[5] = packet.ReadBit();
+    hasByte[1] = packet.ReadBit();
+    hasByte[7] = packet.ReadBit();
 
-    // 1. Send SMSG_LOGIN_VERIFY_WORLD
-    WorldPacket verify(SMSG_LOGIN_VERIFY_WORLD);
-    verify << static_cast<uint32_t>(0);   // Map ID (0 = Azeroth)
-    verify << static_cast<float>(0.0f); // X
-    verify << static_cast<float>(0.0f); // Y
-    verify << static_cast<float>(0.0f); // Z
-    verify << static_cast<float>(0.0f); // O
-    co_await SendPacket(verify);
+    uint64_t rawGuid = 0;
+    auto* guidBytes = reinterpret_cast<uint8_t*>(&rawGuid);
+    if (hasByte[2]) guidBytes[2] = packet.Read<uint8_t>() ^ 1;
+    if (hasByte[3]) guidBytes[3] = packet.Read<uint8_t>() ^ 1;
+    if (hasByte[0]) guidBytes[0] = packet.Read<uint8_t>() ^ 1;
+    if (hasByte[6]) guidBytes[6] = packet.Read<uint8_t>() ^ 1;
+    if (hasByte[4]) guidBytes[4] = packet.Read<uint8_t>() ^ 1;
+    if (hasByte[5]) guidBytes[5] = packet.Read<uint8_t>() ^ 1;
+    if (hasByte[1]) guidBytes[1] = packet.Read<uint8_t>() ^ 1;
+    if (hasByte[7]) guidBytes[7] = packet.Read<uint8_t>() ^ 1;
 
-    // 2. Send SMSG_TUTORIAL_FLAGS (all zero)
-    co_await SendTutorialFlags();
+    uint32_t charGuid = static_cast<uint32_t>(rawGuid);
+    FL_LOG_INFO("WorldSession", "[{}] CMSG_PLAYER_LOGIN for GUID: {}", _remoteAddress, charGuid);
 
-    // 3. Send SMSG_TIME_SYNC_REQ
-    WorldPacket timeSync(SMSG_TIME_SYNC_REQ);
-    timeSync << static_cast<uint32_t>(0); // Counter
-    co_await SendPacket(timeSync);
+    auto charOpt = co_await sCharDB.GetCharacterByGuid(charGuid);
+    if (!charOpt)
+    {
+        FL_LOG_ERROR("WorldSession", "[{}] Character GUID {} not found", _remoteAddress, charGuid);
+        co_return;
+    }
+    const auto& ch = *charOpt;
+    uint64_t guid = ch.guid;
 
-    // 4. Send Initial Object Update
-    //SendInitialObjectUpdate(guid);
+    // Use Northshire starting position if character has no valid position
+    float spawnX = (ch.x == 0.0f && ch.y == 0.0f) ? -8949.95f : ch.x;
+    float spawnY = (ch.x == 0.0f && ch.y == 0.0f) ? -132.493f : ch.y;
+    float spawnZ = (ch.x == 0.0f && ch.y == 0.0f) ? 83.5312f  : ch.z;
 
-    // 5. Send Account Data Times
+    // 1. Initial account data (TC: first thing in HandlePlayerLogin)
     co_await SendAccountDataTimes();
+    co_await SendLearnedDanceMoves();
 
-    // 6. Set Time Speed
-    //SendLoginSetTimeSpeed();
-
-    // 7. Send MOTD (Correct bit-packed format)
+    // 2. Before-map packets (TC: SendInitialPacketsBeforeAddToMap)
+    //    CLIENT_CONTROL + MOVE_SET_ACTIVE_MOVER must be sent BEFORE CREATE_OBJECT2
+    co_await SendClientControlUpdate(guid, true);
+    co_await SendMoveSetActiveMover(guid);
+    co_await SendInitialSpells();
+    co_await SendUnlearnSpells();
+    co_await SendActionButtons();
+    co_await SendInitializeFactions();
     co_await SendMotd();
 
-    FL_LOG_INFO("WorldSession", "[{}] Handshake for Player Login completed for GUID: {}", _remoteAddress, guid);
+    // 3. "AddToMap" — sends CREATE_OBJECT2 to client
+    co_await SendCreatePlayerObject(ch, spawnX, spawnY, spawnZ);
+
+    // 4. LOGIN_VERIFY_WORLD must come AFTER CREATE_OBJECT2 (TC: after AddToMap)
+    WorldPacket verify(SMSG_LOGIN_VERIFY_WORLD);
+    verify << uint32_t(ch.mapId) << spawnX << spawnY << spawnZ << float(0.0f);
+    co_await SendPacket(verify);
+
+    // 5. Post-map packets (TC: SendInitialPacketsAfterAddToMap)
+    co_await SendLoginSetTimeSpeed();
+
+    WorldPacket timeSync(SMSG_TIME_SYNC_REQ);
+    timeSync << uint32_t(0);
+    co_await SendPacket(timeSync);
+
+    co_await SendTutorialFlags();
+
+    FL_LOG_INFO("WorldSession", "[{}] Player login complete for '{}'", _remoteAddress, ch.name);
+}
+
+async<void> WorldSession::HandleMessageChat(WorldPacket& packet)
+{
+    uint32_t type = packet.Read<uint32_t>();
+    uint32_t language = packet.Read<uint32_t>();
+
+    std::string target;
+    static const uint32_t CHAT_MSG_WHISPER = 6;
+    static const uint32_t CHAT_MSG_CHANNEL = 15;
+    if (type == CHAT_MSG_WHISPER || type == CHAT_MSG_CHANNEL)
+    {
+        target = packet.ReadString();
+    }
+
+    std::string message = packet.ReadString();
+	auto _playerGuid = 1; // Placeholder GUID for the player sending the message
+    FL_LOG_DEBUG("WorldSession", "[{}] Chat from {} : [{}] {}", _remoteAddress, _playerGuid, type, message);
+
+    // Echo back to nearby players (spatial chat base)
+    // For now, only send back to the sender
+    WorldPacket response(SMSG_MESSAGECHAT);
+    response << static_cast<uint8_t>(type);
+    response << static_cast<uint32_t>(language);
+    response << static_cast<uint64_t>(_playerGuid);
+    response << static_cast<uint32_t>(0);           // Unk
+    response << static_cast<uint64_t>(_playerGuid); // Target? or Sender? depends on type
+    response << static_cast<uint32_t>(message.length() + 1);
+    response << message;
+    response << static_cast<uint8_t>(0); // Tag
+
+    co_await SendPacket(response);
+}
+
+async<void> WorldSession::HandleMovement(WorldPacket& packet)
+{
+    auto ReadMovementInfo = [](WorldPacket& packet, MovementInfo& move)
+    {
+        if (packet.Size() >= 26)
+        {
+            // Basic structure: Flags(4), Flags2(2), Time(4), X, Y, Z, O (16) = 26 bytes
+			packet >> move.flags >> move.flags2 >> move.time >> move.x >> move.y >> move.z >> move.orientation;
+        }
+    };
+    MovementInfo move;
+    ReadMovementInfo(packet, move);
+
+    // Update internal state
+    auto _position = move;
+	auto _playerGuid = 1; // Placeholder GUID for the player moving
+    FL_LOG_DEBUG("WorldSession", "[{}] Player {} moved to ({:.2f}, {:.2f}, {:.2f}) O:{:.2f}", _remoteAddress, _playerGuid, move.x, move.y, move.z, move.orientation);
+
+    // Broadcast movement (Echo back to client for now, or broadcast to others if
+    // any) In WoW, we typically echo back the movement packet if it's an MSG
+    // opcode
+
+    // Rough check for MSG opcodes if needed,
+    if (packet.opcode() >= 0x2000)
+    {
+        
+        // but we listed them explicitly
+        // echo back
+        WorldPacket echo(packet.opcode(), packet.Size());
+        echo << packet.Storage();
+        co_await SendPacket(echo);
+    }
+}
+
+// ---- Player login helpers --------------------------------------------------
+
+async<void> WorldSession::SendInitialSpells()
+{
+    WorldPacket data(SMSG_INITIAL_SPELLS, 5);
+    data << uint8_t(0);   // initial login flag
+    data << uint16_t(0);  // spell count
+    data << uint16_t(0);  // cooldown count
+    co_await SendPacket(data);
+}
+
+async<void> WorldSession::SendUnlearnSpells()
+{
+    WorldPacket data(SMSG_SEND_UNLEARN_SPELLS, 4);
+    data << uint32_t(0);  // count = 0
+    co_await SendPacket(data);
+}
+
+async<void> WorldSession::SendInitializeFactions()
+{
+    // TC sends exactly 256 entries: flags (uint8) + standing (uint32) per entry
+    WorldPacket data(SMSG_INITIALIZE_FACTIONS, 4 + 256 * 5);
+    data << uint32_t(256);
+    for (uint32_t i = 0; i < 256; ++i)
+    {
+        data << uint8_t(0);  // flags
+        data << uint32_t(0); // standing
+    }
+    co_await SendPacket(data);
+}
+
+async<void> WorldSession::SendActionButtons()
+{
+    // TC order: 144 buttons (uint32 each) then reason byte
+    WorldPacket data(SMSG_ACTION_BUTTONS, 144 * 4 + 1);
+    for (int i = 0; i < 144; ++i)
+        data << uint32_t(0);
+    data << uint8_t(0);  // 0 = initial login
+    co_await SendPacket(data);
+}
+
+async<void> WorldSession::SendLoginSetTimeSpeed()
+{
+    // TC format: AppendPackedTime(GameTime) + float(speed) + uint32(HolidayOffset)
+    // AppendPackedTime packs: (year-100)<<24 | mon<<20 | (mday-1)<<14 | wday<<11 | hour<<6 | min
+    time_t now = std::time(nullptr);
+    struct tm lt{};
+    localtime_s(&lt, &now);
+    uint32_t packedTime = static_cast<uint32_t>(
+        ((lt.tm_year - 100) << 24) | (lt.tm_mon << 20) |
+        ((lt.tm_mday - 1)   << 14) | (lt.tm_wday << 11) |
+        (lt.tm_hour          << 6)  |  lt.tm_min);
+
+    WorldPacket data(SMSG_LOGIN_SET_TIME_SPEED, 12);
+    data << packedTime;
+    data << float(0.01666667f);
+    data << uint32_t(0); // GameTimeHolidayOffset
+    co_await SendPacket(data);
+}
+
+// Display ID lookup for playable races in Cata 4.3.4 (gender: 0=male, 1=female)
+static uint32_t GetDisplayId(uint8_t race, uint8_t gender)
+{
+    static const uint32_t ids[25][2] = {
+        {0,     0    }, // 0 unused
+        {49,    50   }, // 1 Human
+        {51,    52   }, // 2 Orc
+        {53,    54   }, // 3 Dwarf
+        {55,    56   }, // 4 Night Elf
+        {57,    58   }, // 5 Undead
+        {59,    60   }, // 6 Tauren
+        {1563,  1564 }, // 7 Gnome
+        {1478,  1479 }, // 8 Troll
+        {0,     0    }, // 9 unused
+        {15476, 15475}, // 10 Blood Elf
+        {16125, 16126}, // 11 Draenei
+        {0,0},{0,0},{0,0},{0,0},{0,0},{0,0},{0,0},{0,0},{0,0}, // 12-20 unused
+        {20578, 20579}, // 21 Goblin
+        {24389, 24390}, // 22 Worgen
+        {0,     0    }, // 23 unused
+        {0,     0    }, // 24 unused
+    };
+    if (race >= 25) return 49;
+    uint32_t id = ids[race][gender & 1];
+    return id ? id : 49;
+}
+
+async<void> WorldSession::SendCreatePlayerObject(const characters& ch, float x, float y, float z)
+{
+    UpdateData data;
+    MovementInfo info;
+    info.x = x;
+    info.y = y;
+    info.z = z;
+    info.orientation = 0.0f;
+
+    uint64_t guid = ch.guid;
+
+    // Power type: warrior/dk=1(rage/runic), hunter=2(focus), rogue=3(energy), rest=0(mana)
+    static const uint8_t classPower[] = {0, 1, 0, 2, 0, 3, 0, 0, 0, 0, 0, 0, 6, 0};
+    uint8_t powerType = (ch.char_class < 14) ? classPower[ch.char_class] : 0;
+
+    // Faction template IDs per race
+    static const uint32_t factions[] = {0, 1, 2, 3, 4, 5, 6, 115, 116, 0, 1610, 1629,
+                                        0, 0, 0, 0, 0, 0, 0, 0, 0, 2101, 2100, 0, 0};
+    uint32_t faction = (ch.race < 23) ? factions[ch.race] : 1;
+
+    uint32_t displayId = GetDisplayId(ch.race, ch.gender);
+
+    std::map<uint16_t, uint32_t> fields;
+    fields[OBJECT_FIELD_GUID]          = static_cast<uint32_t>(guid & 0xFFFFFFFF);
+    fields[OBJECT_FIELD_GUID + 1]      = static_cast<uint32_t>(guid >> 32);
+    fields[OBJECT_FIELD_TYPE]          = (1 << TYPEID_OBJECT) | (1 << TYPEID_UNIT) | (1 << TYPEID_PLAYER);
+    fields[OBJECT_FIELD_SCALE_X]       = 0x3F800000u; // 1.0f as bits
+
+    fields[UNIT_FIELD_BYTES_0]         = static_cast<uint32_t>(ch.race)
+                                       | (static_cast<uint32_t>(ch.char_class) << 8)
+                                       | (static_cast<uint32_t>(ch.gender) << 16)
+                                       | (static_cast<uint32_t>(powerType) << 24);
+    fields[UNIT_FIELD_HEALTH]          = 100;
+    fields[UNIT_FIELD_MAXHEALTH]       = 100;
+    fields[UNIT_FIELD_LEVEL]           = ch.level ? ch.level : 1;
+    fields[UNIT_FIELD_FACTIONTEMPLATE] = faction;
+    fields[UNIT_FIELD_DISPLAYID]       = displayId;
+    fields[UNIT_FIELD_NATIVEDISPLAYID] = displayId;
+
+    fields[PLAYER_BYTES]               = static_cast<uint32_t>(ch.skin)
+                                       | (static_cast<uint32_t>(ch.face) << 8)
+                                       | (static_cast<uint32_t>(ch.hairStyle) << 16)
+                                       | (static_cast<uint32_t>(ch.hairColor) << 24);
+    fields[PLAYER_BYTES_2]             = static_cast<uint32_t>(ch.facialHair);
+    fields[PLAYER_BYTES_3]             = static_cast<uint32_t>(ch.gender);
+
+    data.AddCreateObject(guid, TYPEID_PLAYER, info, fields, /*isSelf=*/true);
+
+    WorldPacket packet(SMSG_UPDATE_OBJECT);
+    data.Build(packet);
+    co_await SendPacket(packet);
+}
+
+async<void> WorldSession::SendClientControlUpdate(uint64_t guid, bool allowMove)
+{
+    // TC: data << target->GetPackGUID() << uint8(allowMove ? 1 : 0)
+    WorldPacket data(SMSG_CLIENT_CONTROL_UPDATE);
+    data.WritePackedGuid(guid);
+    data << uint8_t(allowMove ? 1 : 0);
+    co_await SendPacket(data);
+}
+
+async<void> WorldSession::SendMoveSetActiveMover(uint64_t guid)
+{
+    // TC: MoveSetActiveMover::Write() — bit-packed GUID in order 5,7,3,6,0,4,1,2
+    uint8_t g[8];
+    for (int i = 0; i < 8; ++i)
+        g[i] = static_cast<uint8_t>((guid >> (i * 8)) & 0xFF);
+
+    WorldPacket data(SMSG_MOVE_SET_ACTIVE_MOVER);
+    data.WriteBit(g[5]);
+    data.WriteBit(g[7]);
+    data.WriteBit(g[3]);
+    data.WriteBit(g[6]);
+    data.WriteBit(g[0]);
+    data.WriteBit(g[4]);
+    data.WriteBit(g[1]);
+    data.WriteBit(g[2]);
+    data.FlushBits();
+    data.WriteByteSeq(g[6]);
+    data.WriteByteSeq(g[2]);
+    data.WriteByteSeq(g[3]);
+    data.WriteByteSeq(g[0]);
+    data.WriteByteSeq(g[5]);
+    data.WriteByteSeq(g[7]);
+    data.WriteByteSeq(g[1]);
+    data.WriteByteSeq(g[4]);
+    co_await SendPacket(data);
 }
 
 // ---- Helpers ---------------------------------------------------------------
@@ -788,14 +1076,14 @@ async<WorldPacket> WorldSession::ReadClientPacket()
 {
     // 1. Read and decrypt the 6-byte CMSG wire header.
     std::array<uint8_t, WorldPacket::CMSG_HEADER_SIZE> headerBuf{};
-    auto readed = co_await boost::asio::async_read(_socket, boost::asio::buffer(headerBuf), boost::asio::use_awaitable);
-    FL_LOG_DEBUG("WorldSession", "[{}] Read {} bytes for CMSG header", _remoteAddress, readed);
+    [[maybe_unused]] auto readed = co_await boost::asio::async_read(_socket, boost::asio::buffer(headerBuf), boost::asio::use_awaitable);
+    //FL_LOG_DEBUG("WorldSession", "[{}] Read {} bytes for CMSG header", _remoteAddress, readed);
 
     _crypt.DecryptRecv(headerBuf.data(), headerBuf.size());
 
     // 2. Parse opcode and payload size; build an empty WorldPacket.
     WorldPacket packet = WorldPacket::FromCmsgHeader(headerBuf);
-    FL_LOG_DEBUG("WorldSession", "[{}] Parsed opcode {} with payload size {} bytes", _remoteAddress, packet.opcodeName(), packet.Size());
+    //FL_LOG_DEBUG("WorldSession", "[{}] Parsed opcode {} with payload size {} bytes", _remoteAddress, packet.opcodeName(), packet.Size());
 
     // 3. Read the payload (if any) directly into the packet.
     uint16_t wireSize = (uint16_t{headerBuf[0]} << 8) | headerBuf[1];
@@ -807,8 +1095,8 @@ async<WorldPacket> WorldSession::ReadClientPacket()
             throw std::runtime_error(std::format("Packet {}: payload too large ({} bytes)", packet.opcodeName(), payloadSize));
 
         std::vector<uint8_t> payloadBuf(payloadSize);
-        auto readedPayload = co_await boost::asio::async_read(_socket, boost::asio::buffer(payloadBuf), boost::asio::use_awaitable);
-        FL_LOG_DEBUG("WorldSession", "[{}] Read {} bytes for CMSG payload", _remoteAddress, readedPayload);
+        readed = co_await boost::asio::async_read(_socket, boost::asio::buffer(payloadBuf), boost::asio::use_awaitable);
+        //FL_LOG_DEBUG("WorldSession", "[{}] Read {} bytes for CMSG payload", _remoteAddress, readed);
 
         packet.Append(payloadBuf.data(), payloadBuf.size());
     }
@@ -833,8 +1121,10 @@ async<void> WorldSession::SendPacket(const WorldPacket& packet)
 
     // Encrypt the 4-byte SMSG header in-place.
     // WorldCrypt::EncryptSend is a no-op until Init() has been called.
-    FL_LOG_DEBUG("WorldSession", "[{}] SendPacket RAW: {}", _remoteAddress, Fireland::Utils::StringUtils::HexStr(frame));
+	WorldServerOpcodes opcode = static_cast<WorldServerOpcodes>(packet.opcode());
+    auto packet_name = Describe::to_string(opcode);
+    FL_LOG_DEBUG("WorldSession", "[{}] {} SendPacket RAW: {}", _remoteAddress, packet_name, Fireland::Utils::StringUtils::HexStr(frame));
     _crypt.EncryptSend(frame.data(), WorldPacket::SMSG_HEADER_SIZE);
-    FL_LOG_DEBUG("WorldSession", "[{}] SendPacket CRYPT: {}", _remoteAddress, Fireland::Utils::StringUtils::HexStr(frame));
+    FL_LOG_DEBUG("WorldSession", "[{}] {} SendPacket CRYPT: {}", _remoteAddress, packet_name, Fireland::Utils::StringUtils::HexStr(frame));
     co_await boost::asio::async_write(_socket, boost::asio::buffer(frame), boost::asio::use_awaitable);
 }

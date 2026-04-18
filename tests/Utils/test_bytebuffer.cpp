@@ -24,7 +24,7 @@ BOOST_AUTO_TEST_CASE(bytebuffer_write_read_integer_test)
     ByteBuffer bb;
     
     // Write uint32_t
-    bb.Write(uint32_t(0x12345678));
+    bb << uint32_t(0x12345678);
     BOOST_TEST(bb.Size() == 4U);
 
     // Read it back
@@ -32,8 +32,8 @@ BOOST_AUTO_TEST_CASE(bytebuffer_write_read_integer_test)
     BOOST_TEST(value == 0x12345678U);
 
     // Write multiple values
-    bb.Write(uint8_t(0xAA));
-    bb.Write(uint16_t(0xBBCC));
+    bb << uint8_t(0xAA);
+    bb << uint16_t(0xBBCC);
     BOOST_TEST(bb.Size() == 4U + 1U + 2U);  // Total buffer size is 7
 
     uint8_t b = bb.Read<uint8_t>();
@@ -60,7 +60,7 @@ BOOST_AUTO_TEST_CASE(bytebuffer_append_test)
 BOOST_AUTO_TEST_CASE(bytebuffer_pad_test)
 {
     ByteBuffer bb;
-    bb.Write(uint16_t(0x1234));
+    bb << uint16_t(0x1234);
     bb.Pad(4);
     
     BOOST_TEST(bb.Size() == 2U + 4U);
@@ -75,9 +75,8 @@ BOOST_AUTO_TEST_CASE(bytebuffer_pad_test)
 BOOST_AUTO_TEST_CASE(bytebuffer_write_string_test)
 {
     ByteBuffer bb;
-    
-    bb.WriteString("hello");
-    BOOST_TEST(bb.Size() == (2U + 5U)); // uint16_t size + "hello"
+	bb << "hello";
+	BOOST_TEST(bb.Size() == (5U)); // "hello" + '\0' is included in operator<<
 
     auto str = bb.ReadString();
     BOOST_TEST(str == "hello");
@@ -115,8 +114,8 @@ BOOST_AUTO_TEST_CASE(bytebuffer_stream_operators_test)
 BOOST_AUTO_TEST_CASE(bytebuffer_operator_bracket_test)
 {
     ByteBuffer bb;
-    bb.Write(uint8_t(0xAA));
-    bb.Write(uint8_t(0xBB));
+    bb << uint8_t(0xAA);
+    bb << uint8_t(0xBB);
 
     BOOST_TEST(bb[0] == 0xAAU);
     BOOST_TEST(bb[1] == 0xBBU);
@@ -128,9 +127,9 @@ BOOST_AUTO_TEST_CASE(bytebuffer_operator_bracket_test)
 BOOST_AUTO_TEST_CASE(bytebuffer_read_position_test)
 {
     ByteBuffer bb;
-    bb.Write(uint32_t(1));
-    bb.Write(uint32_t(2));
-    bb.Write(uint32_t(3));
+    bb << uint32_t(1);
+    bb << uint32_t(2);
+    bb << uint32_t(3);
 
     BOOST_TEST(bb.Read<uint32_t>() == 1U);
     BOOST_TEST(bb.ReadPos() == 4U);
@@ -145,7 +144,7 @@ BOOST_AUTO_TEST_CASE(bytebuffer_read_position_test)
 BOOST_AUTO_TEST_CASE(bytebuffer_underflow_test)
 {
     ByteBuffer bb;
-    bb.Write(uint16_t(0x1234));
+    bb << uint16_t(0x1234);
 
     uint16_t val = bb.Read<uint16_t>();
     BOOST_TEST(val == 0x1234U);

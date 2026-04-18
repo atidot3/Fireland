@@ -24,6 +24,7 @@
 #include <Utils/ByteBuffer.h>
 
 #include <Shared/SharedDefines.hpp>
+#include <Shared/Char/Characters.h>
 
 #include <Network/World/WorldOpcode.hpp>
 #include <Network/World/WorldPacket.hpp>
@@ -76,6 +77,16 @@ namespace Fireland::World
 		Utils::Async::async<void> HandleCharCreate(WorldPacket& packet);
         Utils::Async::async<void> HandleCharDelete(WorldPacket& packet);
         Utils::Async::async<void> HandlePlayerLogin(WorldPacket& packet);
+        Utils::Async::async<void> SendInitialSpells();
+        Utils::Async::async<void> SendUnlearnSpells();
+        Utils::Async::async<void> SendInitializeFactions();
+        Utils::Async::async<void> SendActionButtons();
+        Utils::Async::async<void> SendLoginSetTimeSpeed();
+        Utils::Async::async<void> SendCreatePlayerObject(const characters& ch, float x, float y, float z);
+		Utils::Async::async<void> HandleMessageChat(WorldPacket& packet);
+		Utils::Async::async<void> HandleMovement(WorldPacket& packet);
+        Utils::Async::async<void> SendClientControlUpdate(uint64_t guid, bool allowMove);
+        Utils::Async::async<void> SendMoveSetActiveMover(uint64_t guid);
         // ---- Send / receive helpers ----
 
         /// Read a complete CMSG (header + payload) from the socket.

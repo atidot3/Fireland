@@ -68,7 +68,7 @@ public:
     /// size = 2 (opcode width) + payload size.
     [[nodiscard]] std::array<uint8_t, SMSG_HEADER_SIZE> SmsgHeader() const noexcept
     {
-        auto sz = static_cast<uint16_t>(Size() + 2);
+        auto sz = static_cast<uint16_t>(wpos() + 2);
         auto op = static_cast<uint16_t>(_opcode);
         return {
             static_cast<uint8_t>(sz >> 8),     // size  high byte (BE)
@@ -84,9 +84,9 @@ public:
     {
         auto hdr = SmsgHeader();
         std::vector<uint8_t> frame;
-        frame.reserve(SMSG_HEADER_SIZE + Size());
+        frame.reserve(SMSG_HEADER_SIZE + wpos());
         frame.insert(frame.end(), hdr.begin(), hdr.end());
-        frame.insert(frame.end(), Storage().begin(), Storage().end());
+        frame.insert(frame.end(), _storage.begin(), _storage.begin() + _wpos);
         return frame;
     }
 

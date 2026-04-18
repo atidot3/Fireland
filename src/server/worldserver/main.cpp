@@ -92,6 +92,7 @@ Fireland::Utils::Async::async<void> async_main(Fireland::Utils::IoContext& threa
 
     signals.cancel();
     sAuthDB.Shutdown();
+	sCharDB.Shutdown();
     thread_pool.Stop();
 }
 
