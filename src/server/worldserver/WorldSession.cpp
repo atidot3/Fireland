@@ -369,7 +369,7 @@ async<void> WorldSession::SendTutorialFlags()
 
 async<void> WorldSession::SendAccountRestrictedUpdate()
 {
-    WorldPacket data(SMSG_ACCOUNT_RESTRICTED_UPDATE);
+    WorldPacket data(SMSG_ACCOUNT_RESTRICTED_WARNING);
     
     data.WriteBit(false); // isRestricted
     data.FlushBits();
@@ -379,7 +379,7 @@ async<void> WorldSession::SendAccountRestrictedUpdate()
 
 async<void> WorldSession::SendSetDfFastLaunchResources()
 {
-    WorldPacket data(SMSG_SET_DF_FAST_LAUNCH_RESOURCES);
+    WorldPacket data(SMSG_SET_DF_FAST_LAUNCH_RESULT);
     
     data.WriteBits(0, 32); // Count (32 bits for bits count?)
     data.FlushBits();
@@ -408,23 +408,53 @@ async<void> WorldSession::SendFeatureSystemStatus()
 {
     WorldPacket features(SMSG_FEATURE_SYSTEM_STATUS);
 
-    // Cata 4.3.4 (15595) fields
-    features << uint8_t(0);  // ScrollOfResurrectionDailyLimit
-    features << uint8_t(0);  // ScrollOfResurrectionDailyLimitTotal
-    features << uint32_t(0); // ScrollOfResurrectionMaxLevel
-
-    features.WriteBit(false); // QuestHotfixesEnabled
-    features.WriteBit(false); // EuropaEnabled
-    features.WriteBit(false); // EquipmentManagerEnabled
-    features.WriteBit(false); // CanPurchaseLevel
-    features.WriteBit(false); // VoiceChatEnabled
+    // TC 4.3.4 SystemPackets.cpp FeatureSystemStatus::Write()
+    features << int8_t(2);    // ComplaintStatus (2 = enabled)
+    features << int32_t(1);   // ScrollOfResurrectionRequestsRemaining
+    features << int32_t(1);   // ScrollOfResurrectionMaxRequestsPerDay
+    features << int32_t(1);   // CfgRealmID
+    features << int32_t(0);   // CfgRealmRecID
+    features.WriteBit(false); // ItemRestorationButtonEnabled
+    features.WriteBit(false); // TravelPassEnabled
     features.WriteBit(false); // ScrollOfResurrectionEnabled
-    features.WriteBit(false); // ComplaintEnabled
-    features.WriteBit(false); // SessionTimerEnabled
-    features.WriteBit(false); // KioskModeEnabled
+    features.WriteBit(false); // EuropaTicketSystemStatus present
+    features.WriteBit(false); // SessionAlert present
+    features.WriteBit(false); // VoiceEnabled
     features.FlushBits();
     co_await SendPacket(features);
-    FL_LOG_INFO("WorldSession", "[{}] SMSG_FEATURE_SYSTEM_STATUS sent (4.3.4 format)", _remoteAddress);
+    FL_LOG_INFO("WorldSession", "[{}] SMSG_FEATURE_SYSTEM_STATUS sent", _remoteAddress);
+}
+
+async<void> WorldSession::SendHotfixNotify()
+{
+    WorldPacket data(SMSG_HOTFIX_NOTIFY_BLOB);
+    data.WriteBits(0, 22); // hotfix count = 0
+    data.FlushBits();
+    co_await SendPacket(data);
+    FL_LOG_INFO("WorldSession", "[{}] SMSG_HOTFIX_NOTIFY_BLOB sent (0 hotfixes)", _remoteAddress);
+}
+
+async<void> WorldSession::SendBindPointUpdate(float x, float y, float z, uint32_t mapId, uint32_t zoneId)
+{
+    WorldPacket data(SMSG_BIND_POINT_UPDATE);
+    data << x << y << z << mapId << zoneId;
+    co_await SendPacket(data);
+    FL_LOG_INFO("WorldSession", "[{}] SMSG_BIND_POINT_UPDATE sent", _remoteAddress);
+}
+
+async<void> WorldSession::SendWorldServerInfo()
+{
+    // TC 4.3.4 MiscPackets.cpp WorldServerInfo::Write()
+    WorldPacket data(SMSG_WORLD_SERVER_INFO);
+    data.WriteBit(false); // RestrictedAccountMaxLevel present
+    data.WriteBit(false); // RestrictedAccountMaxMoney present
+    data.WriteBit(false); // IneligibleForLootMask present
+    data.FlushBits();
+    data << uint8_t(0);  // IsTournamentRealm
+    data << uint32_t(static_cast<uint32_t>(std::time(nullptr))); // WeeklyReset
+    data << uint32_t(0); // DifficultyID (0 = normal)
+    co_await SendPacket(data);
+    FL_LOG_INFO("WorldSession", "[{}] SMSG_WORLD_SERVER_INFO sent", _remoteAddress);
 }
 
 async<void> WorldSession::SendRealmSplit(uint32_t realmId)
@@ -532,6 +562,15 @@ async<void> WorldSession::PacketLoop()
             case MSG_MOVE_STOP:
             case MSG_MOVE_SET_FACING:
                 co_await HandleMovement(packet);
+                break;
+            case CMSG_LOADING_SCREEN_NOTIFY:
+				co_await HandleLoadingScreenNotify(packet);
+                break;
+            case CMSG_VIOLENCE_LEVEL:
+				co_await HandleViolenceLevel(packet);
+                break;
+            case CMSG_QUERY_QUESTS_COMPLETED:
+				co_await HandleQueryQuestsCompleted(packet);
                 break;
             default:
                 FL_LOG_DEBUG("WorldSession", "[{}] Unhandled opcode {} ({} bytes)",
@@ -793,19 +832,25 @@ async<void> WorldSession::HandlePlayerLogin(WorldPacket& packet)
     float spawnY = (ch.x == 0.0f && ch.y == 0.0f) ? -132.493f : ch.y;
     float spawnZ = (ch.x == 0.0f && ch.y == 0.0f) ? 83.5312f  : ch.z;
 
+	FL_LOG_DEBUG("WorldSession", "[{}] Player '{}' login: GUID={}, Map={}, Pos=({:.2f}, {:.2f}, {:.2f}), FirstLogin={}", _remoteAddress, ch.name, guid, ch.mapId, spawnX, spawnY, spawnZ, ch.firstLogin);
+
     // 1. Initial account data (TC: first thing in HandlePlayerLogin)
     co_await SendAccountDataTimes();
     co_await SendLearnedDanceMoves();
+    co_await SendHotfixNotify();
 
     // 2. Before-map packets (TC: SendInitialPacketsBeforeAddToMap)
     //    CLIENT_CONTROL + MOVE_SET_ACTIVE_MOVER must be sent BEFORE CREATE_OBJECT2
     co_await SendClientControlUpdate(guid, true);
+    co_await SendBindPointUpdate(spawnX, spawnY, spawnZ, ch.mapId, ch.zoneId);
+    co_await SendWorldServerInfo();
     co_await SendMoveSetActiveMover(guid);
     co_await SendInitialSpells();
     co_await SendUnlearnSpells();
     co_await SendActionButtons();
     co_await SendInitializeFactions();
     co_await SendMotd();
+    co_await SendFeatureSystemStatus();
 
     // 3. "AddToMap" — sends CREATE_OBJECT2 to client
     co_await SendCreatePlayerObject(ch, spawnX, spawnY, spawnZ);
@@ -1070,6 +1115,30 @@ async<void> WorldSession::SendMoveSetActiveMover(uint64_t guid)
     co_await SendPacket(data);
 }
 
+async<void> WorldSession::HandleLoadingScreenNotify(WorldPacket& /*recvData*/)
+{
+	// nothing to do, client just wants to know we received the packet
+    co_return;
+}
+
+async<void> WorldSession::HandleViolenceLevel(WorldPacket& /*recvData*/)
+{
+	// Client is notifying us of its violence level setting, which may affect what content we can show it. For now, just log it.
+    co_return;
+}
+
+
+async<void> WorldSession::HandleQueryQuestsCompleted(WorldPacket& /*recvData*/)
+{
+    size_t rew_count = 0;
+
+    WorldPacket data(SMSG_QUERY_QUESTS_COMPLETED_RESPONSE, 4 + 4 * rew_count);
+    data << uint32_t(rew_count);
+
+    co_await SendPacket(data);
+}
+
+
 // ---- Helpers ---------------------------------------------------------------
 
 async<WorldPacket> WorldSession::ReadClientPacket()
@@ -1123,8 +1192,7 @@ async<void> WorldSession::SendPacket(const WorldPacket& packet)
     // WorldCrypt::EncryptSend is a no-op until Init() has been called.
 	WorldServerOpcodes opcode = static_cast<WorldServerOpcodes>(packet.opcode());
     auto packet_name = Describe::to_string(opcode);
-    FL_LOG_DEBUG("WorldSession", "[{}] {} SendPacket RAW: {}", _remoteAddress, packet_name, Fireland::Utils::StringUtils::HexStr(frame));
+    FL_LOG_DEBUG("WorldSession", "[{}] {} SendPacket: {}", _remoteAddress, packet_name, Fireland::Utils::StringUtils::HexStr(frame));
     _crypt.EncryptSend(frame.data(), WorldPacket::SMSG_HEADER_SIZE);
-    FL_LOG_DEBUG("WorldSession", "[{}] {} SendPacket CRYPT: {}", _remoteAddress, packet_name, Fireland::Utils::StringUtils::HexStr(frame));
     co_await boost::asio::async_write(_socket, boost::asio::buffer(frame), boost::asio::use_awaitable);
 }

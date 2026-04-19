@@ -87,6 +87,13 @@ namespace Fireland::World
 		Utils::Async::async<void> HandleMovement(WorldPacket& packet);
         Utils::Async::async<void> SendClientControlUpdate(uint64_t guid, bool allowMove);
         Utils::Async::async<void> SendMoveSetActiveMover(uint64_t guid);
+        Utils::Async::async<void> SendBindPointUpdate(float x, float y, float z, uint32_t mapId, uint32_t zoneId);
+        Utils::Async::async<void> SendWorldServerInfo();
+        Utils::Async::async<void> SendHotfixNotify();
+        Utils::Async::async<void> HandleLoadingScreenNotify(WorldPacket& packet);
+        Utils::Async::async<void> HandleViolenceLevel(WorldPacket& packet);
+        Utils::Async::async<void> HandleQueryQuestsCompleted(WorldPacket& packet);
+
         // ---- Send / receive helpers ----
 
         /// Read a complete CMSG (header + payload) from the socket.
