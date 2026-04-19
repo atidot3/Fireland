@@ -758,7 +758,7 @@ async<void> WorldSession::HandleCharCreate(WorldPacket& packet)
             co_return co_await SendCharCreateResponse(ResponseCodes::CHAR_CREATE_NAME_IN_USE);
 		}
 
-		characters character{0, _accountId, name, race, _class, gender, skin, face, hairStyle, hairColor, facialHair, 1, 12, 0, -8949.95f, -132.493f, 83.5312f};
+		characters character{0, _accountId, name, race, _class, gender, skin, face, hairStyle, hairColor, facialHair, 1, 12, 0, -8949.95f, -132.493f, 83.5312f, 0, 0, 0, true};
 		auto opt_created_character = co_await sCharDB.CreateCharacter(character);
         if (!opt_created_character)
         {
@@ -918,7 +918,6 @@ async<void> WorldSession::HandleMovement(WorldPacket& packet)
     ReadMovementInfo(packet, move);
 
     // Update internal state
-    auto _position = move;
 	auto _playerGuid = 1; // Placeholder GUID for the player moving
     FL_LOG_DEBUG("WorldSession", "[{}] Player {} moved to ({:.2f}, {:.2f}, {:.2f}) O:{:.2f}", _remoteAddress, _playerGuid, move.x, move.y, move.z, move.orientation);
 
@@ -985,7 +984,12 @@ async<void> WorldSession::SendLoginSetTimeSpeed()
     // AppendPackedTime packs: (year-100)<<24 | mon<<20 | (mday-1)<<14 | wday<<11 | hour<<6 | min
     time_t now = std::time(nullptr);
     struct tm lt{};
+#if defined(_WIN32) || defined(_WIN64)
     localtime_s(&lt, &now);
+#else
+    // POSIX: use localtime_r for thread-safe conversion
+    localtime_r(&now, &lt);
+#endif
     uint32_t packedTime = static_cast<uint32_t>(
         ((lt.tm_year - 100) << 24) | (lt.tm_mon << 20) |
         ((lt.tm_mday - 1)   << 14) | (lt.tm_wday << 11) |

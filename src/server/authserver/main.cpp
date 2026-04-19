@@ -54,8 +54,10 @@ Fireland::Utils::Async::async<void> async_main(Fireland::Utils::IoContext& threa
 {
     // Initialize the database connection pool and verify connectivity before starting the server.
     if (!co_await initiate_database(thread_pool))
+    {
         co_return;
-
+    }
+    
 	// Initialize the realm list manager, which periodically updates the list of realms from the database.
 	Realm::Init(thread_pool.Get());
 
