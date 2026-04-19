@@ -1,5 +1,4 @@
 #pragma once
-
 #include <cstdint>
 
 namespace Fireland
@@ -16,25 +15,15 @@ namespace Fireland
         TYPEID_CORPSE        = 7
     };
 
-    enum TypeMask : uint32_t
-    {
-        TYPEMASK_OBJECT         = 0x0001,
-        TYPEMASK_ITEM           = 0x0002,
-        TYPEMASK_CONTAINER      = 0x0006,
-        TYPEMASK_UNIT           = 0x0008,
-        TYPEMASK_PLAYER         = 0x0010,
-        TYPEMASK_GAMEOBJECT     = 0x0020,
-        TYPEMASK_DYNAMICOBJECT  = 0x0040,
-        TYPEMASK_CORPSE         = 0x0080,
-    };
-
     enum UpdateType : uint8_t
     {
-        UPDATETYPE_VALUES               = 0,
-        UPDATETYPE_CREATE_OBJECT        = 1,
-        UPDATETYPE_CREATE_OBJECT2       = 2,
-        UPDATETYPE_OUT_OF_RANGE_OBJECTS = 3,
-    };
+        UPDATETYPE_VALUES               = 0x00,
+        //UPDATETYPE_MOVEMENT             = 0x01,
+        UPDATETYPE_CREATE_OBJECT        = 0x01,
+        UPDATETYPE_CREATE_OBJECT2       = 0x02,
+        UPDATETYPE_OUT_OF_RANGE_OBJECTS = 0x03,
+        UPDATETYPE_NEAR_OBJECTS         = 0x05
+   };
 
     // Auto generated for version 4, 3, 4, 15595 (matches TrinityCore)
     enum ObjectFields : uint16_t
@@ -475,6 +464,5 @@ namespace Fireland
         PLAYER_FIELD_MOD_PET_HASTE = UNIT_END + 0x04D4, // Size: 1, Type: FLOAT, Flags: PRIVATE
         PLAYER_FIELD_MOD_HASTE_REGEN = UNIT_END + 0x04D5, // Size: 1, Type: FLOAT, Flags: PRIVATE
         PLAYER_END = UNIT_END + 0x04D6
-    };
-
+   };
 } // namespace Fireland

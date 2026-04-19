@@ -15,7 +15,7 @@ namespace Fireland
     class UpdateData
     {
     public:
-        UpdateData() noexcept;
+        explicit UpdateData(uint16_t mapId) noexcept;
 
 		// Create Object update with movement and fields.
         // isSelf=true when the receiving player is the object (uses UPDATETYPE_CREATE_OBJECT2).
@@ -29,6 +29,7 @@ namespace Fireland
         size_t GetBlockCount() const;
 
     private:
+        uint16_t _mapId;
         uint32_t _count;
         Utils::ByteBuffer _data;
     };

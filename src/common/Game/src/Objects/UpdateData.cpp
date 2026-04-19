@@ -1,19 +1,12 @@
 #include <Network/World/WorldOpcode.hpp>
 #include <Game/Objects/UpdateData.h>
+
 #include <Utils/Log.h>
-#include <chrono>
+#include <Utils/Time.h>
 
 using namespace Fireland;
 using namespace Fireland::World;
-
-UpdateData::UpdateData() noexcept : _count(0) {}
-
-static uint32_t CurrentGameTimeMs()
-{
-    using namespace std::chrono;
-    return static_cast<uint32_t>(
-        duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count() & 0xFFFFFFFF);
-}
+using namespace Fireland::Utils;
 
 // Movement speeds matching TrinityCore 4.3.4 defaults
 static constexpr float SPEED_WALK        = 2.5f;
@@ -26,6 +19,27 @@ static constexpr float SPEED_FLIGHT_BACK = 4.5f;
 static constexpr float SPEED_TURN_RATE   = 3.141593f;
 static constexpr float SPEED_PITCH_RATE  = 3.141593f;
 
+enum OBJECT_UPDATE_FLAGS
+{
+    UPDATEFLAG_NONE = 0x0000,
+    UPDATEFLAG_SELF = 0x0001,
+    UPDATEFLAG_TRANSPORT = 0x0002,
+    UPDATEFLAG_HAS_TARGET = 0x0004,
+    UPDATEFLAG_UNKNOWN = 0x0008,
+    UPDATEFLAG_LOWGUID = 0x0010,
+    UPDATEFLAG_LIVING = 0x0020,
+    UPDATEFLAG_STATIONARY_POSITION = 0x0040,
+    UPDATEFLAG_VEHICLE = 0x0080,
+    UPDATEFLAG_GO_TRANSPORT_POSITION = 0x0100,
+    UPDATEFLAG_ROTATION = 0x0200,
+    UPDATEFLAG_UNK3 = 0x0400,
+    UPDATEFLAG_ANIMKITS = 0x0800,
+    UPDATEFLAG_UNK5 = 0x1000,
+    UPDATEFLAG_UNK6 = 0x2000,
+};
+
+UpdateData::UpdateData(uint16_t mapId) noexcept : _mapId(mapId), _count(0) {}
+
 // Adds a UPDATETYPE_CREATE_OBJECT / CREATE_OBJECT2 block.
 // isSelf must be true when the player is the object's owner (self-create).
 // The movement block follows TrinityCore's Cata 4.3.4 Object::BuildMovementUpdate()
@@ -35,13 +49,15 @@ void UpdateData::AddCreateObject(uint64_t guid, TypeID typeId, MovementInfo cons
 {
     _count++;
 
-    uint8_t updateType = (isSelf && typeId == TYPEID_PLAYER)
-                         ? uint8_t(UPDATETYPE_CREATE_OBJECT2)
-                         : uint8_t(UPDATETYPE_CREATE_OBJECT);
+    uint16_t flags = 0x00;
+    flags |= UPDATEFLAG_SELF;
+    flags |= UPDATEFLAG_STATIONARY_POSITION;
+    flags |= UPDATEFLAG_LIVING;
 
-    _data << updateType;
+    _data << std::to_underlying(UPDATETYPE_CREATE_OBJECT2);
     _data.WritePackedGuid(guid);
     _data << std::to_underlying(typeId);
+    //_data << flags;
 
     // Extract guid bytes for bit-packed sequences (little-endian order)
     uint8_t g[8];
@@ -117,7 +133,7 @@ void UpdateData::AddCreateObject(uint64_t guid, TypeID typeId, MovementInfo cons
     _data.WriteByteSeq(g[1]);
     _data.WriteByteSeq(g[2]);
     _data << SPEED_WALK;
-    _data << CurrentGameTimeMs(); // HasTime=true → always write game time (ms)
+    _data << Time::CurrentGameTimeMs(); // HasTime=true → always write game time (ms)
     _data << SPEED_TURN_RATE;
     _data.WriteByteSeq(g[6]);
     _data << SPEED_FLIGHT;
@@ -160,6 +176,7 @@ void UpdateData::AddCreateObject(uint64_t guid, TypeID typeId, MovementInfo cons
 void UpdateData::Build(World::WorldPacket& packet)
 {
     packet.setOpcode(SMSG_UPDATE_OBJECT);
+    packet << uint16_t(_mapId);
     packet << _count;
     packet << _data;
 }

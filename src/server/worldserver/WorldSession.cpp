@@ -840,11 +840,9 @@ async<void> WorldSession::HandlePlayerLogin(WorldPacket& packet)
     co_await SendHotfixNotify();
 
     // 2. Before-map packets (TC: SendInitialPacketsBeforeAddToMap)
-    //    CLIENT_CONTROL + MOVE_SET_ACTIVE_MOVER must be sent BEFORE CREATE_OBJECT2
     co_await SendClientControlUpdate(guid, true);
     co_await SendBindPointUpdate(spawnX, spawnY, spawnZ, ch.mapId, ch.zoneId);
     co_await SendWorldServerInfo();
-    co_await SendMoveSetActiveMover(guid);
     co_await SendInitialSpells();
     co_await SendUnlearnSpells();
     co_await SendActionButtons();
@@ -855,12 +853,16 @@ async<void> WorldSession::HandlePlayerLogin(WorldPacket& packet)
     // 3. "AddToMap" — sends CREATE_OBJECT2 to client
     co_await SendCreatePlayerObject(ch, spawnX, spawnY, spawnZ);
 
-    // 4. LOGIN_VERIFY_WORLD must come AFTER CREATE_OBJECT2 (TC: after AddToMap)
-    WorldPacket verify(SMSG_LOGIN_VERIFY_WORLD);
+    // 4. Post-map packets (TC: SendInitialPacketsAfterAddToMap)
+    //    MoveSetActiveMover MUST come after CREATE_OBJECT2; the client ignores it
+    //    if the player GUID is not yet in the object manager.
+    co_await SendMoveSetActiveMover(guid);
+
+    // 5. LOGIN_VERIFY_WORLD must come AFTER CREATE_OBJECT2 + MoveSetActiveMover
+    WorldPacket verify(SMSG_LOGIN_VERIFY_WORLD, 20);
     verify << uint32_t(ch.mapId) << spawnX << spawnY << spawnZ << float(0.0f);
     co_await SendPacket(verify);
 
-    // 5. Post-map packets (TC: SendInitialPacketsAfterAddToMap)
     co_await SendLoginSetTimeSpeed();
 
     WorldPacket timeSync(SMSG_TIME_SYNC_REQ);
@@ -970,11 +972,11 @@ async<void> WorldSession::SendInitializeFactions()
 
 async<void> WorldSession::SendActionButtons()
 {
-    // TC order: 144 buttons (uint32 each) then reason byte
-    WorldPacket data(SMSG_ACTION_BUTTONS, 144 * 4 + 1);
+    // TC order: reason byte first, then 144 buttons (uint32 each)
+    WorldPacket data(SMSG_ACTION_BUTTONS, 1 + 144 * 4);
+    data << uint8_t(0);  // 0 = initial login
     for (int i = 0; i < 144; ++i)
         data << uint32_t(0);
-    data << uint8_t(0);  // 0 = initial login
     co_await SendPacket(data);
 }
 
@@ -1031,7 +1033,7 @@ static uint32_t GetDisplayId(uint8_t race, uint8_t gender)
 
 async<void> WorldSession::SendCreatePlayerObject(const characters& ch, float x, float y, float z)
 {
-    UpdateData data;
+    UpdateData data(static_cast<uint16_t>(ch.mapId));
     MovementInfo info;
     info.x = x;
     info.y = y;
@@ -1052,6 +1054,7 @@ async<void> WorldSession::SendCreatePlayerObject(const characters& ch, float x, 
     uint32_t displayId = GetDisplayId(ch.race, ch.gender);
 
     std::map<uint16_t, uint32_t> fields;
+
     fields[OBJECT_FIELD_GUID]          = static_cast<uint32_t>(guid & 0xFFFFFFFF);
     fields[OBJECT_FIELD_GUID + 1]      = static_cast<uint32_t>(guid >> 32);
     fields[OBJECT_FIELD_TYPE]          = (1 << TYPEID_OBJECT) | (1 << TYPEID_UNIT) | (1 << TYPEID_PLAYER);
@@ -1061,8 +1064,11 @@ async<void> WorldSession::SendCreatePlayerObject(const characters& ch, float x, 
                                        | (static_cast<uint32_t>(ch.char_class) << 8)
                                        | (static_cast<uint32_t>(ch.gender) << 16)
                                        | (static_cast<uint32_t>(powerType) << 24);
+    fields[UNIT_FIELD_FLAGS]           = 0x00000008u; // UNIT_FLAG_PLAYER_CONTROLLED
     fields[UNIT_FIELD_HEALTH]          = 100;
     fields[UNIT_FIELD_MAXHEALTH]       = 100;
+    fields[UNIT_FIELD_BASE_HEALTH]     = 100;
+    fields[UNIT_FIELD_BYTES_1]         = 0; // stand state = UNIT_STAND_STATE_STAND
     fields[UNIT_FIELD_LEVEL]           = ch.level ? ch.level : 1;
     fields[UNIT_FIELD_FACTIONTEMPLATE] = faction;
     fields[UNIT_FIELD_DISPLAYID]       = displayId;
@@ -1119,9 +1125,12 @@ async<void> WorldSession::SendMoveSetActiveMover(uint64_t guid)
     co_await SendPacket(data);
 }
 
-async<void> WorldSession::HandleLoadingScreenNotify(WorldPacket& /*recvData*/)
+async<void> WorldSession::HandleLoadingScreenNotify(WorldPacket& packet)
 {
-	// nothing to do, client just wants to know we received the packet
+    uint32_t mapId = packet.Read<uint32_t>();
+    bool loadingScreenState = packet.ReadBit();
+
+    FL_LOG_DEBUG("WorldSession", "Loading screen for map '{}' is {}.", mapId, loadingScreenState ? "started" : "finished");
     co_return;
 }
 

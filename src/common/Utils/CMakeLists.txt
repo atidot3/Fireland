@@ -16,6 +16,7 @@ set(headers_files
     include/Utils/Log.h
     include/Utils/ProgramOptions.h
     include/Utils/StringUtils.h
+    include/Utils/Time.h
 
     include/Utils/Configuration/Configuration.h
     include/Utils/Configuration/Configuration_defs.hpp
