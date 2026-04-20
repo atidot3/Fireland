@@ -613,6 +613,44 @@ async<void> WorldSession::PacketLoop()
     }
 }
 
+async<WorldPacket> WorldSession::ReadClientPacket()
+{
+    // 1. Read and decrypt the 6-byte CMSG wire header.
+    std::array<uint8_t, WorldPacket::CMSG_HEADER_SIZE> headerBuf{};
+    [[maybe_unused]] auto readed = co_await boost::asio::async_read(_socket, boost::asio::buffer(headerBuf), boost::asio::use_awaitable);
+    //FL_LOG_DEBUG("WorldSession", "[{}] Read {} bytes for CMSG header", _remoteAddress, readed);
+
+    _crypt.DecryptRecv(headerBuf.data(), headerBuf.size());
+
+    // 2. Parse opcode and payload size; build an empty WorldPacket.
+    WorldPacket packet = WorldPacket::FromCmsgHeader(headerBuf);
+    //FL_LOG_DEBUG("WorldSession", "[{}] Parsed opcode {} with payload size {} bytes", _remoteAddress, packet.opcodeName(), packet.Size());
+
+    // 3. Read the payload (if any) directly into the packet.
+    uint16_t wireSize = (uint16_t{ headerBuf[0] } << 8) | headerBuf[1];
+    if (wireSize > 4)
+    {
+        std::size_t payloadSize = wireSize - 4;
+        constexpr std::size_t MAX_PAYLOAD = 64 * 1024;
+        if (payloadSize > MAX_PAYLOAD)
+            throw std::runtime_error(std::format("Packet {}: payload too large ({} bytes)", packet.opcodeName(), payloadSize));
+
+        std::vector<uint8_t> payloadBuf(payloadSize);
+        readed = co_await boost::asio::async_read(_socket, boost::asio::buffer(payloadBuf), boost::asio::use_awaitable);
+        //FL_LOG_DEBUG("WorldSession", "[{}] Read {} bytes for CMSG payload", _remoteAddress, readed);
+
+        packet.Append(payloadBuf.data(), payloadBuf.size());
+    }
+
+    co_return packet;
+}
+
+void WorldSession::SendPacket(const WorldPacket& packet)
+{
+    auto copy = packet; // Make a copy to ensure the original packet can be safely reused by the caller
+    _sendQueue.push(std::move(copy));
+}
+
 async<void> WorldSession::RecvLoop()
 {
 	auto self = shared_from_this();
@@ -661,9 +699,7 @@ async<void> WorldSession::SendLoop()
 
         // Encrypt the 4-byte SMSG header in-place.
         // WorldCrypt::EncryptSend is a no-op until Init() has been called.
-	    WorldServerOpcodes opcode = static_cast<WorldServerOpcodes>(packet.opcode());
-        auto packet_name = World::server_opcode_to_string(opcode);
-        FL_LOG_DEBUG("WorldSession", "[{}] {} co_return SendPacket: {}", _remoteAddress, packet_name, Fireland::Utils::StringUtils::HexStr(frame));
+        FL_LOG_DEBUG("WorldSession", "[{}] {} SendPacket: {}", _remoteAddress, World::server_opcode_to_string(packet.opcode()), Fireland::Utils::StringUtils::HexStr(frame));
         _crypt.EncryptSend(frame.data(), WorldPacket::SMSG_HEADER_SIZE);
         co_await boost::asio::async_write(_socket, boost::asio::buffer(frame), boost::asio::use_awaitable);
     }
@@ -1227,45 +1263,4 @@ async<void> WorldSession::HandleQueryQuestsCompleted(WorldPacket& /*recvData*/)
     data << uint32_t(rew_count);
 
     co_return SendPacket(data);
-}
-
-
-// ---- Helpers ---------------------------------------------------------------
-
-async<WorldPacket> WorldSession::ReadClientPacket()
-{
-    // 1. Read and decrypt the 6-byte CMSG wire header.
-    std::array<uint8_t, WorldPacket::CMSG_HEADER_SIZE> headerBuf{};
-    [[maybe_unused]] auto readed = co_await boost::asio::async_read(_socket, boost::asio::buffer(headerBuf), boost::asio::use_awaitable);
-    //FL_LOG_DEBUG("WorldSession", "[{}] Read {} bytes for CMSG header", _remoteAddress, readed);
-
-    _crypt.DecryptRecv(headerBuf.data(), headerBuf.size());
-
-    // 2. Parse opcode and payload size; build an empty WorldPacket.
-    WorldPacket packet = WorldPacket::FromCmsgHeader(headerBuf);
-    //FL_LOG_DEBUG("WorldSession", "[{}] Parsed opcode {} with payload size {} bytes", _remoteAddress, packet.opcodeName(), packet.Size());
-
-    // 3. Read the payload (if any) directly into the packet.
-    uint16_t wireSize = (uint16_t{headerBuf[0]} << 8) | headerBuf[1];
-    if (wireSize > 4)
-    {
-        std::size_t payloadSize = wireSize - 4;
-        constexpr std::size_t MAX_PAYLOAD = 64 * 1024;
-        if (payloadSize > MAX_PAYLOAD)
-            throw std::runtime_error(std::format("Packet {}: payload too large ({} bytes)", packet.opcodeName(), payloadSize));
-
-        std::vector<uint8_t> payloadBuf(payloadSize);
-        readed = co_await boost::asio::async_read(_socket, boost::asio::buffer(payloadBuf), boost::asio::use_awaitable);
-        //FL_LOG_DEBUG("WorldSession", "[{}] Read {} bytes for CMSG payload", _remoteAddress, readed);
-
-        packet.Append(payloadBuf.data(), payloadBuf.size());
-    }
-
-    co_return packet;
-}
-
-void WorldSession::SendPacket(const WorldPacket& packet)
-{
-	auto copy = packet; // Make a copy to ensure the original packet can be safely reused by the caller
-    _sendQueue.push(std::move(copy));
 }
