@@ -379,7 +379,7 @@ async<void> WorldSession::HandleLogoutRequestOpcode(WorldPacket& /*packet*/)
     WorldPacket data(SMSG_LOGOUT_RESPONSE, 1 + 4);
     data << reason;
     data << instantLogout;
-    co_return SendPacket(data);
+    SendPacket(data);
     FL_LOG_DEBUG("WorldSession", "[{}] Sent SMSG_LOGOUT_RESPONSE Message (reason={}, instant={})", _remoteAddress, reason, instantLogout);
 
 	// Async callback after 1 or 20 seconds to close the connection if the client hasn't cancelled logout by then.
