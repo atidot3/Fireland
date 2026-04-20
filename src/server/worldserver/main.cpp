@@ -53,6 +53,7 @@ Fireland::Utils::Async::async<bool> initiate_database(Fireland::Utils::IoContext
     if (!co_await sCharDB.ping())
     {
         FL_LOG_ERROR("WorldServer", "Failed to connect to the Characters database. Shutting down.");
+        sAuthDB.Shutdown();
         sCharDB.Shutdown();
         thread_pool.Stop();
         co_return false;
