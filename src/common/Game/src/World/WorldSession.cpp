@@ -982,8 +982,15 @@ async<void> WorldSession::HandlePlayerLogin(WorldPacket& packet)
     co_await SendMotd();
     co_await SendFeatureSystemStatus();
 
+    // Send cinematics here on first login with class cinematic_id from game files.
+    WorldPacket pack_cinematic(SMSG_TRIGGER_CINEMATIC, 4);
+    pack_cinematic << uint32_t(1); // Cinematic ID
+    SendPacket(pack_cinematic);
+
     // 3. "AddToMap" — sends CREATE_OBJECT2 to client
     co_await SendCreatePlayerObject(ch, spawnX, spawnY, spawnZ);
+
+    // Add to map here ?
 
     // 4. Post-map packets (TC: SendInitialPacketsAfterAddToMap)
     //    MoveSetActiveMover MUST come after CREATE_OBJECT2; the client ignores it
