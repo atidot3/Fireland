@@ -1,5 +1,5 @@
 # ============================================================================
-# server/ — Fireland server executables
+# server/ — Firelands server executables
 # ============================================================================
 
 add_subdirectory(authserver)

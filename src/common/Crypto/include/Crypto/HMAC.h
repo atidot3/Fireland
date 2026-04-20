@@ -3,7 +3,7 @@
 // ============================================================================
 // HMAC-SHA1 — RFC 2104 keyed-hash message authentication code
 //
-// Implemented on top of Fireland::Crypto::SHA1 (Boost-based); no external
+// Implemented on top of Firelands::Crypto::SHA1 (Boost-based); no external
 // crypto library required.
 // ============================================================================
 
@@ -13,7 +13,7 @@
 
 #include "SHA1.h"
 
-namespace Fireland::Crypto {
+namespace Firelands::Crypto {
 
 /// Compute HMAC-SHA1(key, data).
 /// Both key and data are arbitrary byte spans.
@@ -56,4 +56,4 @@ inline SHA1::Digest HMAC_SHA1(std::span<const uint8_t> key,
     return outer.Finalize();
 }
 
-} // namespace Fireland::Crypto
+} // namespace Firelands::Crypto

@@ -4,7 +4,7 @@
 #include <boost/test/unit_test.hpp>
 #include <Utils/StringUtils.h>
 
-using namespace Fireland::Utils::StringUtils;
+using namespace Firelands::Utils::StringUtils;
 using namespace std::string_literals;
 
 BOOST_AUTO_TEST_CASE(trim_test)

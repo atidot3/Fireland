@@ -11,7 +11,7 @@
 #include <string_view>
 #include <boost/uuid/detail/sha1.hpp>
 
-namespace Fireland::Crypto {
+namespace Firelands::Crypto {
 
     class SHA1
     {
@@ -60,4 +60,4 @@ namespace Fireland::Crypto {
         boost::uuids::detail::sha1 _ctx;
     };
 
-} // namespace Fireland::Crypto
+} // namespace Firelands::Crypto

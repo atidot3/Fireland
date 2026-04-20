@@ -11,7 +11,7 @@
 
 #include <Utils/Asio/Describe.hpp>
 
-namespace Fireland::World
+namespace Firelands::World
 {
     // ---- Cata 4.3.4 connection initialization strings -------------------------
     static const std::string SERVER_CONNECTION_INIT = "WORLD OF WARCRAFT CONNECTION - SERVER TO CLIENT";
@@ -1451,4 +1451,4 @@ namespace Fireland::World
     // Cataclysm expected build number
     constexpr uint16_t EXPECTED_BUILD = 15595;
 
-} // namespace Fireland::World
+} // namespace Firelands::World

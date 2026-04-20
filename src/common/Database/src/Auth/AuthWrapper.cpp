@@ -8,8 +8,8 @@
 
 #include <Utils/Log.h>
 
-using namespace Fireland::Database::Auth;
-using namespace Fireland::Utils::Async;
+using namespace Firelands::Database::Auth;
+using namespace Firelands::Utils::Async;
 using namespace std::chrono_literals;
 
 std::unique_ptr<AuthWrapper> AuthWrapper::instance_ = nullptr;

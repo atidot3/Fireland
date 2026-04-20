@@ -5,9 +5,9 @@
 
 #include <Network/Auth/AuthOpcode.hpp>
 
-namespace Fireland::Auth
+namespace Firelands::Auth
 {
-    class AuthPacket : public Fireland::Utils::ByteBuffer
+    class AuthPacket : public Firelands::Utils::ByteBuffer
     {
     public:
         AuthPacket() = default;
@@ -19,7 +19,7 @@ namespace Fireland::Auth
 
         auto opcode() const noexcept { return _opcode; }
         auto setOpcode(AuthOpcode opcode) noexcept { _opcode = opcode; }
-        auto name() const { return Fireland::Utils::Describe::to_string(_opcode); }
+        auto name() const { return Firelands::Utils::Describe::to_string(_opcode); }
         bool operator==(const AuthPacket& other) const noexcept
         {
             return _opcode == other._opcode;
@@ -27,4 +27,4 @@ namespace Fireland::Auth
     private:
         AuthOpcode _opcode;
     };
-} // namespace Fireland::Auth
+} // namespace Firelands::Auth

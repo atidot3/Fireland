@@ -21,7 +21,7 @@
 
 #include <Network/NetDefines.h>
 
-namespace Fireland::Network
+namespace Firelands::Network
 {
     template <IsSession SessionType>
     class SessionManager final
@@ -109,4 +109,4 @@ namespace Fireland::Network
         std::unordered_map<uint64_t, Ptr>                 _sessions;
     };
 
-} // namespace Fireland::Network
+} // namespace Firelands::Network

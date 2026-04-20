@@ -24,10 +24,10 @@
 
 #include <Database/Auth/AuthWrapper.h>
 
-using namespace Fireland::Auth;
-using namespace Fireland::Utils::Async;
-using namespace Fireland::Utils;
-using ByteBuffer = Fireland::Utils::ByteBuffer;
+using namespace Firelands::Auth;
+using namespace Firelands::Utils::Async;
+using namespace Firelands::Utils;
+using ByteBuffer = Firelands::Utils::ByteBuffer;
 
 // ---- Construction ----------------------------------------------------------
 

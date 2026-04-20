@@ -31,9 +31,9 @@
 #   include <Windows.h>
 #endif
 
-using Fireland::Utils::Describe::to_string;
+using Firelands::Utils::Describe::to_string;
 
-namespace Fireland::Utils::Log {
+namespace Firelands::Utils::Log {
 
 // ============================================================================
 // ANSI colour table (indexed 0-14, TrinityCore convention)
@@ -510,4 +510,4 @@ void SetConsoleEnabled(bool enabled)
     }
 }
 
-} // namespace Fireland::Utils::Log
+} // namespace Firelands::Utils::Log

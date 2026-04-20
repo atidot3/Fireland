@@ -32,20 +32,20 @@ set(sources_files
   src/Log.cpp
 )
 
-add_library(fireland_utils STATIC
+add_library(firelands_utils STATIC
   ${headers_files}
   ${sources_files}
 )
 
-target_include_directories(fireland_utils
+target_include_directories(firelands_utils
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/>
     $<INSTALL_INTERFACE:include/>
 )
 
-target_link_libraries(fireland_utils
+target_link_libraries(firelands_utils
   PUBLIC
-    fireland_compiler_options
+    firelands_compiler_options
     Boost::asio
     Boost::system
     Boost::log
@@ -53,16 +53,16 @@ target_link_libraries(fireland_utils
 )
 
 # includes for internal use
-target_include_directories(fireland_utils PRIVATE 
+target_include_directories(firelands_utils PRIVATE 
   include/
   src/
 )
 
 # Platform-specific deps for Boost.Asio
 if(WIN32)
-  target_link_libraries(fireland_utils PUBLIC ws2_32 mswsock)
+  target_link_libraries(firelands_utils PUBLIC ws2_32 mswsock)
 endif()
 
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${headers_files} ${sources_files})
 
-set_target_properties(fireland_utils PROPERTIES FOLDER "Common")
+set_target_properties(firelands_utils PROPERTIES FOLDER "Common")

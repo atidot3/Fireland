@@ -7,7 +7,7 @@
 #include <fstream>
 #include <cstdio>
 
-using namespace Fireland::Utils;
+using namespace Firelands::Utils;
 
 struct ConfigurationFixture {
     std::string testFile = "test_config.conf";

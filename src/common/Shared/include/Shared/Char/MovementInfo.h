@@ -2,7 +2,7 @@
 
 #include <cinttypes>
 
-namespace Fireland {
+namespace Firelands {
 
     struct MovementInfo
     {
@@ -13,4 +13,4 @@ namespace Fireland {
         uint32_t fallTime = 0;
     };
 
-} // namespace Fireland
+} // namespace Firelands

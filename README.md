@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">🔥 Fireland</h1>
+  <h1 align="center">🔥 Firelands</h1>
   <p align="center">
     World of Warcraft — Cataclysm (4.3.4) Private Server Emulator
   </p>
@@ -21,7 +21,7 @@
 
 ## Overview
 
-**Fireland** is a modern WoW Cataclysm (4.3.4 / build 15595) server emulator written from scratch in **C++23**, leveraging **Boost.Asio** with C++20 coroutines for high-performance asynchronous networking.
+**Firelands** is a modern WoW Cataclysm (4.3.4 / build 15595) server emulator written from scratch in **C++23**, leveraging **Boost.Asio** with C++20 coroutines for high-performance asynchronous networking.
 
 ### Key features
 
@@ -38,7 +38,7 @@
 ## Project structure
 
 ```
-Fireland/
+Firelands/
 ├── CMakeLists.txt
 ├── cmake/
 │   ├── Platform.cmake
@@ -143,8 +143,8 @@ Fireland/
 ### Windows 11 — Visual Studio 2026
 
 ```powershell
-git clone https://github.com/atidot3/Fireland.git
-cd Fireland
+git clone https://github.com/atidot3/Firelands.git
+cd Firelands
 cmake -B build -G "Visual Studio 18 2026" -A x64
 cmake --build build --config Debug
 ```
@@ -159,8 +159,8 @@ sudo apt update
 sudo apt install -y build-essential cmake git libmysqlclient-dev
 
 # Clone & build
-git clone https://github.com/atidot3/Fireland.git
-cd Fireland
+git clone https://github.com/atidot3/Firelands.git
+cd Firelands
 cmake -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build -j$(nproc)
 ```
@@ -169,7 +169,7 @@ cmake --build build -j$(nproc)
 
 | Option | Default | Description |
 |---|---|---|
-| `FIRELAND_ENABLE_SANITIZERS` | `OFF` | Enable AddressSanitizer + UBSan in Debug builds |
+| `FIRELANDS_ENABLE_SANITIZERS` | `OFF` | Enable AddressSanitizer + UBSan in Debug builds |
 
 ## Configuration
 

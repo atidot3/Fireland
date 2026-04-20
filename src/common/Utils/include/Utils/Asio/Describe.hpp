@@ -6,7 +6,7 @@
 #include <boost/describe.hpp>
 #include <boost/mp11.hpp>
 
-namespace Fireland::Utils::Describe
+namespace Firelands::Utils::Describe
 {
 	//FUNCTIONS USED WITH
 	//BOOST_DESCRIBE_ENUM()

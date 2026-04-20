@@ -4,7 +4,7 @@
 #include <cctype>
 #include <string>
 
-namespace Fireland::Crypto {
+namespace Firelands::Crypto {
 
 // WoW's 256-bit safe prime (little-endian)
 static constexpr uint8_t N_BYTES[] = {
@@ -170,4 +170,4 @@ std::array<uint8_t, 40> SRP6::InterleaveHash(const BigNumber& S)
     return K;
 }
 
-} // namespace Fireland::Crypto
+} // namespace Firelands::Crypto

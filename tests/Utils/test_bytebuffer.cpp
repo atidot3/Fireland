@@ -4,7 +4,7 @@
 #include <boost/test/unit_test.hpp>
 #include <Utils/ByteBuffer.h>
 
-using namespace Fireland::Utils;
+using namespace Firelands::Utils;
 
 BOOST_AUTO_TEST_CASE(bytebuffer_constructor_test)
 {

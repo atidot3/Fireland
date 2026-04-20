@@ -2,7 +2,7 @@
 #include <Utils/Log.h>
 #include <fstream>
 
-using namespace Fireland::Utils;
+using namespace Firelands::Utils;
 
 Configuration& Configuration::Instance()
 {

@@ -4,13 +4,13 @@
 
 #include <Utils/StringUtils.h>
 
-using namespace Fireland::World;
+using namespace Firelands::World;
 
 
 
-std::ostream& Fireland::World::operator<<(std::ostream& os, const WorldPacket& pkt)
+std::ostream& Firelands::World::operator<<(std::ostream& os, const WorldPacket& pkt)
 {
-    std::string fmt = std::format("WorldPacket(opcode={}, data={}, size={})", pkt.opcodeName(), Fireland::Utils::StringUtils::HexStr(pkt.Serialize()), pkt.size());
+    std::string fmt = std::format("WorldPacket(opcode={}, data={}, size={})", pkt.opcodeName(), Firelands::Utils::StringUtils::HexStr(pkt.Serialize()), pkt.size());
     os << fmt;
     return os;
 }

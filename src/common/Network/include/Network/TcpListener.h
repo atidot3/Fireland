@@ -21,7 +21,7 @@
 
 #include <Network/NetDefines.h>
 
-namespace Fireland::Network
+namespace Firelands::Network
 {
     template <IsSession SessionType>
     class TcpListener final
@@ -102,4 +102,4 @@ namespace Fireland::Network
         SessionFactory                 _factory;
         boost::asio::ip::tcp::acceptor _acceptor;
     };
-} // namespace Fireland::Network
+} // namespace Firelands::Network

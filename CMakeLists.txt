@@ -1,9 +1,9 @@
 # ============================================================================
-# Fireland — WoW Cataclysm Private Server
+# Firelands — WoW Cataclysm Private Server
 # ============================================================================
 cmake_minimum_required(VERSION 3.20)
 
-project(Fireland
+project(Firelands
   VERSION   0.1.0
   LANGUAGES CXX
 )
@@ -23,8 +23,8 @@ set(CMAKE_CXX_EXTENSIONS        OFF)
 # ----------------------------------------------------------------------------
 # Boost configuration (consumed by 3rdParty/boost)
 # ----------------------------------------------------------------------------
-set(FIRELAND_BOOST_VERSION "1.90.0")
-set(FIRELAND_BOOST_COMPONENTS
+set(FIRELANDS_BOOST_VERSION "1.90.0")
+set(FIRELANDS_BOOST_COMPONENTS
   asio system regex log date_time test coroutine program_options url charconv multiprecision uuid mysql
 )
 
@@ -53,7 +53,7 @@ add_subdirectory(tests)
 # ----------------------------------------------------------------------------
 # IDE: put CMake utility targets in a CMake/ folder
 # ----------------------------------------------------------------------------
-set_target_properties(fireland_compiler_options PROPERTIES FOLDER "CMake")
+set_target_properties(firelands_compiler_options PROPERTIES FOLDER "CMake")
 if(TARGET ZERO_CHECK)
   set_target_properties(ZERO_CHECK PROPERTIES FOLDER "CMake")
 endif()

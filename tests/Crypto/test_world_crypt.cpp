@@ -7,7 +7,7 @@
 #include <Crypto/HMAC.h>
 #include <array>
 
-using namespace Fireland::Crypto;
+using namespace Firelands::Crypto;
 
 // ============================================================================
 // ARC4 Tests

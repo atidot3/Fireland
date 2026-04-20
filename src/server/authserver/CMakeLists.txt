@@ -1,5 +1,5 @@
 # ============================================================================
-# authserver — Fireland Authentication Server
+# authserver — Firelands Authentication Server
 # ============================================================================
 
 set(headers_files
@@ -20,11 +20,11 @@ add_executable(authserver
 
 target_link_libraries(authserver
     PRIVATE
-        fireland_compiler_options
-        fireland_utils
-        fireland_crypto
-        fireland_network
-        fireland_database
+        firelands_compiler_options
+        firelands_utils
+        firelands_crypto
+        firelands_network
+        firelands_database
 )
 
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${headers_files} ${sources_files})

@@ -23,7 +23,7 @@
 #include <Crypto/ARC4.h>
 #include <Crypto/HMAC.h>
 
-namespace Fireland::Crypto {
+namespace Firelands::Crypto {
 
 class WorldCrypt
 {
@@ -88,4 +88,4 @@ private:
     bool _initialized = false;
 };
 
-} // namespace Fireland::Crypto
+} // namespace Firelands::Crypto

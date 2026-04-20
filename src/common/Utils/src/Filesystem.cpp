@@ -1,7 +1,7 @@
 #include <Utils/Filesystem.h>
 #include <fstream>
 
-using namespace Fireland::Utils::Filesystem;
+using namespace Firelands::Utils::Filesystem;
 
 inline filesystem_error_code to_fs_error(const std::error_code& ec)
 {

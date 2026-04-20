@@ -5,10 +5,10 @@
 # Sanitizer option (Debug only)
 option(FIRELAND_ENABLE_SANITIZERS "Enable address/undefined sanitizers in Debug" OFF)
 
-add_library(fireland_compiler_options INTERFACE)
+add_library(firelands_compiler_options INTERFACE)
 
 if(MSVC)
-  target_compile_options(fireland_compiler_options INTERFACE
+  target_compile_options(firelands_compiler_options INTERFACE
     /W4
     /MP                   # Multi-process compilation
     /permissive-          # Strict conformance
@@ -19,7 +19,7 @@ if(MSVC)
 
 else()
   # GCC / Clang / Apple Clang
-  target_compile_options(fireland_compiler_options INTERFACE
+  target_compile_options(firelands_compiler_options INTERFACE
     -Wall
     -Wextra
     -Wpedantic
@@ -27,17 +27,17 @@ else()
   )
 
   # Release optimisation
-  target_compile_options(fireland_compiler_options INTERFACE
+  target_compile_options(firelands_compiler_options INTERFACE
     $<$<CONFIG:Release>:-O2>
     $<$<CONFIG:RelWithDebInfo>:-O2 -g>
   )
 
   # Sanitizers
   if(FIRELAND_ENABLE_SANITIZERS)
-    target_compile_options(fireland_compiler_options INTERFACE
+    target_compile_options(firelands_compiler_options INTERFACE
       $<$<CONFIG:Debug>:-fsanitize=address,undefined -fno-omit-frame-pointer>
     )
-    target_link_options(fireland_compiler_options INTERFACE
+    target_link_options(firelands_compiler_options INTERFACE
       $<$<CONFIG:Debug>:-fsanitize=address,undefined>
     )
   endif()

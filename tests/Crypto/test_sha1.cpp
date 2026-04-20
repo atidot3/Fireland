@@ -4,7 +4,7 @@
 #include <boost/test/unit_test.hpp>
 #include <Crypto/SHA1.h>
 
-using namespace Fireland::Crypto;
+using namespace Firelands::Crypto;
 
 BOOST_AUTO_TEST_CASE(sha1_empty_string_test)
 {

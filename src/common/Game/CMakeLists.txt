@@ -18,38 +18,38 @@ set(sources_files
     src/World/WorldSession.cpp
 )
 
-add_library(fireland_game STATIC
+add_library(firelands_game STATIC
   ${headers_files}
   ${sources_files}
 )
 
-target_include_directories(fireland_game
+target_include_directories(firelands_game
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/>
     $<INSTALL_INTERFACE:include/>
 )
 
-target_link_libraries(fireland_game
+target_link_libraries(firelands_game
   PUBLIC
-    fireland_compiler_options
-    fireland_utils
-    fireland_shared
-    fireland_network
-    fireland_database
-    fireland_crypto
+    firelands_compiler_options
+    firelands_utils
+    firelands_shared
+    firelands_network
+    firelands_database
+    firelands_crypto
 )
 
 # includes for internal use
-target_include_directories(fireland_game PRIVATE 
+target_include_directories(firelands_game PRIVATE 
   include/
   src/
 )
 
 # Platform-specific deps for Boost.Asio
 if(WIN32)
-  target_link_libraries(fireland_game PUBLIC ws2_32 mswsock)
+  target_link_libraries(firelands_game PUBLIC ws2_32 mswsock)
 endif()
 
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${headers_files} ${sources_files})
 
-set_target_properties(fireland_game PROPERTIES FOLDER "Common")
+set_target_properties(firelands_game PROPERTIES FOLDER "Common")

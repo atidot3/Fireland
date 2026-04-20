@@ -1,7 +1,7 @@
 #pragma once
 #include <cstdint>
 
-namespace Fireland
+namespace Firelands
 {
     enum TypeID : uint8_t
     {
@@ -463,4 +463,4 @@ namespace Fireland
         PLAYER_FIELD_MOD_HASTE_REGEN = UNIT_END + 0x04D5, // Size: 1, Type: FLOAT, Flags: PRIVATE
         PLAYER_END = UNIT_END + 0x04D6
    };
-} // namespace Fireland
+} // namespace Firelands

@@ -24,7 +24,7 @@ public:
 
 private:
     explicit Realm(boost::asio::any_io_executor exec);
-    Fireland::Utils::Async::async<void> realm_update();
+    Firelands::Utils::Async::async<void> realm_update();
 
 private:
     static std::unique_ptr<Realm> instance_;

@@ -1,7 +1,7 @@
 # ============================================================================
 # common/Database — Async MySQL library (Boost.Asio + C++20 coroutines + Boost::mysql)
 #
-# Depends on fireland_utils for IoContext, logging, etc.
+# Depends on firelands_utils for IoContext, logging, etc.
 # ============================================================================
 
 set(headers_files
@@ -18,30 +18,30 @@ set(sources_files
   src/Char/CharWrapper.cpp
 )
 
-add_library(fireland_database STATIC
+add_library(firelands_database STATIC
   ${headers_files}
   ${sources_files}
 )
 
-target_include_directories(fireland_database
+target_include_directories(firelands_database
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/>
     $<INSTALL_INTERFACE:include/>
 )
 
-target_link_libraries(fireland_database
+target_link_libraries(firelands_database
   PUBLIC
-    fireland_utils   # brings Boost::asio, Boost::system, Boost::log, ws2_32, etc.
-    fireland_shared  # for shared data structures
+    firelands_utils   # brings Boost::asio, Boost::system, Boost::log, ws2_32, etc.
+    firelands_shared  # for shared data structures
     Boost::mysql
 )
 
 # includes for internal use
-target_include_directories(fireland_database PRIVATE 
+target_include_directories(firelands_database PRIVATE 
   include/
   src/
 )
 
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${headers_files} ${sources_files})
 
-set_target_properties(fireland_database PROPERTIES FOLDER "Common")
+set_target_properties(firelands_database PROPERTIES FOLDER "Common")

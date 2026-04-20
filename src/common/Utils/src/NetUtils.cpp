@@ -3,7 +3,7 @@
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/system_executor.hpp>
 
-std::string Fireland::Utils::Net::ip_for(const std::string ip_or_name)
+std::string Firelands::Utils::Net::ip_for(const std::string ip_or_name)
 {
     if (!boost::regex_match(ip_or_name, boost::regex("(?:\\d+\\.)+")))
     {

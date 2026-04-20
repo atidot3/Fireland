@@ -4,8 +4,8 @@
 // Log — Configurable, coloured logging system
 //
 // Initialization:
-//   Fireland::Utils::Log::Init("authserver.conf");      // from config file
-//   Fireland::Utils::Log::Init();                       // defaults: console, INFO
+//   Firelands::Utils::Log::Init("authserver.conf");      // from config file
+//   Firelands::Utils::Log::Init();                       // defaults: console, INFO
 //
 // Usage (std::format syntax — first argument is the logger tag):
 //   FL_LOG_INFO("Network", "Listening on {}:{}", addr, port);
@@ -29,7 +29,7 @@
 
 #include <Utils/Asio/Describe.hpp>
 
-namespace Fireland::Utils::Log
+namespace Firelands::Utils::Log
 {
     // ---- Severity levels (matches TrinityCore convention) ----------------------
     // Lower value = more critical.  A logger configured at level N accepts
@@ -71,14 +71,14 @@ namespace Fireland::Utils::Log
     {
         return std::format(fmt, std::forward<Args>(args)...);
     }
-} // namespace Fireland::Utils::Log
+} // namespace Firelands::Utils::Log
 
 // ---- Convenience macros (std::format API with logger tag) ------------------
 // The ShouldLog check avoids the Format() cost for disabled loggers.
 
-#define FL_LOG_TRACE(tag, fmt, ...)   do { if (::Fireland::Utils::Log::ShouldLog(tag, ::Fireland::Utils::Log::Level::Trace))   ::Fireland::Utils::Log::Write(tag, ::Fireland::Utils::Log::Level::Trace,   ::Fireland::Utils::Log::Format(fmt __VA_OPT__(,) __VA_ARGS__)); } while(0)
-#define FL_LOG_DEBUG(tag, fmt, ...)   do { if (::Fireland::Utils::Log::ShouldLog(tag, ::Fireland::Utils::Log::Level::Debug))   ::Fireland::Utils::Log::Write(tag, ::Fireland::Utils::Log::Level::Debug,   ::Fireland::Utils::Log::Format(fmt __VA_OPT__(,) __VA_ARGS__)); } while(0)
-#define FL_LOG_INFO(tag, fmt, ...)    do { if (::Fireland::Utils::Log::ShouldLog(tag, ::Fireland::Utils::Log::Level::Info))    ::Fireland::Utils::Log::Write(tag, ::Fireland::Utils::Log::Level::Info,    ::Fireland::Utils::Log::Format(fmt __VA_OPT__(,) __VA_ARGS__)); } while(0)
-#define FL_LOG_WARNING(tag, fmt, ...) do { if (::Fireland::Utils::Log::ShouldLog(tag, ::Fireland::Utils::Log::Level::Warning)) ::Fireland::Utils::Log::Write(tag, ::Fireland::Utils::Log::Level::Warning, ::Fireland::Utils::Log::Format(fmt __VA_OPT__(,) __VA_ARGS__)); } while(0)
-#define FL_LOG_ERROR(tag, fmt, ...)   do { if (::Fireland::Utils::Log::ShouldLog(tag, ::Fireland::Utils::Log::Level::Error))   ::Fireland::Utils::Log::Write(tag, ::Fireland::Utils::Log::Level::Error,   ::Fireland::Utils::Log::Format(fmt __VA_OPT__(,) __VA_ARGS__)); } while(0)
-#define FL_LOG_FATAL(tag, fmt, ...)   do { if (::Fireland::Utils::Log::ShouldLog(tag, ::Fireland::Utils::Log::Level::Fatal))   ::Fireland::Utils::Log::Write(tag, ::Fireland::Utils::Log::Level::Fatal,   ::Fireland::Utils::Log::Format(fmt __VA_OPT__(,) __VA_ARGS__)); } while(0)
+#define FL_LOG_TRACE(tag, fmt, ...)   do { if (::Firelands::Utils::Log::ShouldLog(tag, ::Firelands::Utils::Log::Level::Trace))   ::Firelands::Utils::Log::Write(tag, ::Firelands::Utils::Log::Level::Trace,   ::Firelands::Utils::Log::Format(fmt __VA_OPT__(,) __VA_ARGS__)); } while(0)
+#define FL_LOG_DEBUG(tag, fmt, ...)   do { if (::Firelands::Utils::Log::ShouldLog(tag, ::Firelands::Utils::Log::Level::Debug))   ::Firelands::Utils::Log::Write(tag, ::Firelands::Utils::Log::Level::Debug,   ::Firelands::Utils::Log::Format(fmt __VA_OPT__(,) __VA_ARGS__)); } while(0)
+#define FL_LOG_INFO(tag, fmt, ...)    do { if (::Firelands::Utils::Log::ShouldLog(tag, ::Firelands::Utils::Log::Level::Info))    ::Firelands::Utils::Log::Write(tag, ::Firelands::Utils::Log::Level::Info,    ::Firelands::Utils::Log::Format(fmt __VA_OPT__(,) __VA_ARGS__)); } while(0)
+#define FL_LOG_WARNING(tag, fmt, ...) do { if (::Firelands::Utils::Log::ShouldLog(tag, ::Firelands::Utils::Log::Level::Warning)) ::Firelands::Utils::Log::Write(tag, ::Firelands::Utils::Log::Level::Warning, ::Firelands::Utils::Log::Format(fmt __VA_OPT__(,) __VA_ARGS__)); } while(0)
+#define FL_LOG_ERROR(tag, fmt, ...)   do { if (::Firelands::Utils::Log::ShouldLog(tag, ::Firelands::Utils::Log::Level::Error))   ::Firelands::Utils::Log::Write(tag, ::Firelands::Utils::Log::Level::Error,   ::Firelands::Utils::Log::Format(fmt __VA_OPT__(,) __VA_ARGS__)); } while(0)
+#define FL_LOG_FATAL(tag, fmt, ...)   do { if (::Firelands::Utils::Log::ShouldLog(tag, ::Firelands::Utils::Log::Level::Fatal))   ::Firelands::Utils::Log::Write(tag, ::Firelands::Utils::Log::Level::Fatal,   ::Firelands::Utils::Log::Format(fmt __VA_OPT__(,) __VA_ARGS__)); } while(0)

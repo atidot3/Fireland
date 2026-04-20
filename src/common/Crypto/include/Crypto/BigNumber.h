@@ -13,7 +13,7 @@
 
 #include <boost/multiprecision/cpp_int.hpp>
 
-namespace Fireland::Crypto {
+namespace Firelands::Crypto {
 
 class BigNumber
 {
@@ -40,4 +40,4 @@ private:
     boost::multiprecision::cpp_int _val;
 };
 
-} // namespace Fireland::Crypto
+} // namespace Firelands::Crypto

@@ -14,7 +14,7 @@
 #include <span>
 #include <format>
 
-namespace Fireland::Utils::StringUtils
+namespace Firelands::Utils::StringUtils
 {
     /// Trim whitespace from both ends.
     inline std::string Trim(std::string_view sv)
@@ -150,4 +150,4 @@ namespace Fireland::Utils::StringUtils
         auto s = oss.str();
         return s.substr(0, s.length() - separator.length()); //remove last separator
     }
-} // namespace Fireland::Utils::StringUtils
+} // namespace Firelands::Utils::StringUtils

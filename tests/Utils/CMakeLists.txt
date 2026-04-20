@@ -10,20 +10,20 @@ set(sources_files
   test_Configuration.cpp
 )
 
-add_executable(fireland_utils_tests ${sources_files})
+add_executable(firelands_utils_tests ${sources_files})
 
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${sources_files})
 
-target_link_libraries(fireland_utils_tests
+target_link_libraries(firelands_utils_tests
   PRIVATE
-    fireland_utils
+    firelands_utils
     Boost::unit_test_framework
 )
 
-target_include_directories(fireland_utils_tests PRIVATE
+target_include_directories(firelands_utils_tests PRIVATE
   ${CMAKE_SOURCE_DIR}/src/common/Utils/include
 )
 
-set_target_properties(fireland_utils_tests PROPERTIES FOLDER "Tests/Utils")
+set_target_properties(firelands_utils_tests PROPERTIES FOLDER "Tests/Utils")
 
-add_test(NAME fireland_utils COMMAND fireland_utils_tests)
+add_test(NAME firelands_utils COMMAND firelands_utils_tests)

@@ -34,10 +34,10 @@ BOOST_DESCRIBE_ENUM(AuthSessionStatus, LOGON_CHALLENGE, LOGON_PROOF, RECONNECT_P
 struct AuthHandler
 {
     AuthSessionStatus status;
-    std::function<Fireland::Utils::Async::async<void>(Fireland::Auth::AuthPacket)> handler;
+    std::function<Firelands::Utils::Async::async<void>(Firelands::Auth::AuthPacket)> handler;
 };
 
-namespace Fireland::Auth
+namespace Firelands::Auth
 {
     class AuthSession : public std::enable_shared_from_this<AuthSession>
     {
@@ -71,4 +71,4 @@ namespace Fireland::Auth
 
         std::array<uint8_t, 16> _reconnectRand{};  // random challenge for reconnect proof
     };
-} // namespace Fireland::Auth
+} // namespace Firelands::Auth

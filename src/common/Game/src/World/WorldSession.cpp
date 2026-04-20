@@ -23,10 +23,10 @@
 
 #include <Game/Objects/UpdateData.h>
 
-using namespace Fireland::World;
-using namespace Fireland::Utils;
-using namespace Fireland::Utils::Async;
-using ByteBuffer = Fireland::Utils::ByteBuffer;
+using namespace Firelands::World;
+using namespace Firelands::Utils;
+using namespace Firelands::Utils::Async;
+using ByteBuffer = Firelands::Utils::ByteBuffer;
 
 // ---- Construction ----------------------------------------------------------
 
@@ -366,7 +366,7 @@ async<void> WorldSession::SendAuthResponse(ResponseCodes result)
     response << result;
 
     FL_LOG_DEBUG("WorldSession", "[{}] Sending SMSG_AUTH_RESPONSE (result=0x{:02X})", _remoteAddress, static_cast<uint8_t>(result));
-    FL_LOG_DEBUG("WorldSession", "[{}] AUTH_RESPONSE RAW: {}", _remoteAddress, Fireland::Utils::StringUtils::HexStr(response.Data()));
+    FL_LOG_DEBUG("WorldSession", "[{}] AUTH_RESPONSE RAW: {}", _remoteAddress, Firelands::Utils::StringUtils::HexStr(response.Data()));
 
     co_return SendPacket(response);
 }
@@ -708,7 +708,7 @@ async<void> WorldSession::SendLoop()
 
         // Encrypt the 4-byte SMSG header in-place.
         // WorldCrypt::EncryptSend is a no-op until Init() has been called.
-        FL_LOG_DEBUG("WorldSession", "[{}] {} SendPacket: {}", _remoteAddress, World::server_opcode_to_string(packet.opcode()), Fireland::Utils::StringUtils::HexStr(frame));
+        FL_LOG_DEBUG("WorldSession", "[{}] {} SendPacket: {}", _remoteAddress, World::server_opcode_to_string(packet.opcode()), Firelands::Utils::StringUtils::HexStr(frame));
         _crypt.EncryptSend(frame.data(), WorldPacket::SMSG_HEADER_SIZE);
         co_await boost::asio::async_write(_socket, boost::asio::buffer(frame), boost::asio::use_awaitable);
     }

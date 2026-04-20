@@ -4,7 +4,7 @@
 #include <concepts>
 #include <cstdint>
 
-namespace Fireland::Network
+namespace Firelands::Network
 {
     template <typename T>
     concept IsSession = requires(std::shared_ptr<T> s) {

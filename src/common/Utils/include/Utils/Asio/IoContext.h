@@ -10,7 +10,7 @@
 #include <boost/asio/any_io_executor.hpp>
 #include <boost/asio/thread_pool.hpp>
 
-namespace Fireland::Utils
+namespace Firelands::Utils
 {
     class IoContext final
     {
@@ -33,4 +33,4 @@ namespace Fireland::Utils
     private:
         boost::asio::thread_pool _pool;
     };
-} // namespace Fireland::Utils
+} // namespace Firelands::Utils

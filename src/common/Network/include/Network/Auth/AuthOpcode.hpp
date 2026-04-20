@@ -9,7 +9,7 @@
 #include <Utils/ByteBuffer.h>
 #include <Utils/Asio/Describe.hpp>
 
-namespace Fireland::Auth
+namespace Firelands::Auth
 {
     enum class AuthOpcode : uint8_t
     {
@@ -51,7 +51,7 @@ namespace Fireland::Auth
         std::string account_name;
 
         AuthLogonChallenge_C() = default;
-        AuthLogonChallenge_C(Fireland::Utils::ByteBuffer& buffer)
+        AuthLogonChallenge_C(Firelands::Utils::ByteBuffer& buffer)
         {
             if (buffer.Size() <= 0)
                 throw std::runtime_error("Buffer too small for AuthLogonChallenge_C");
@@ -65,7 +65,7 @@ namespace Fireland::Auth
             buffer>> timezone_bias >> ip >> account_len;
             account_name = buffer.ReadString(account_len);
         }
-        AuthLogonChallenge_C& operator<<(Fireland::Utils::ByteBuffer& buffer)
+        AuthLogonChallenge_C& operator<<(Firelands::Utils::ByteBuffer& buffer)
         {
             if (buffer.Size() <= 0)
                 throw std::runtime_error("Buffer too small for AuthLogonChallenge_C");
@@ -90,7 +90,7 @@ namespace Fireland::Auth
         uint8_t security_flags;
 
         AuthLogonProof_C() = default;
-        AuthLogonProof_C(Fireland::Utils::ByteBuffer& buffer)
+        AuthLogonProof_C(Firelands::Utils::ByteBuffer& buffer)
         {
             if (buffer.Size() <= 0)
                 throw std::runtime_error("Buffer too small for AuthLogonProof_C");
@@ -98,7 +98,7 @@ namespace Fireland::Auth
             buffer>> A >> M1 >> crc_hash;
             buffer>> number_of_keys >> security_flags;
         }
-        AuthLogonProof_C& operator<<(Fireland::Utils::ByteBuffer& buffer)
+        AuthLogonProof_C& operator<<(Firelands::Utils::ByteBuffer& buffer)
         {        if (buffer.Size() <= 0)
                 throw std::runtime_error("Buffer too small for AuthLogonProof_C");
             buffer>> A >> M1 >> crc_hash;
@@ -115,14 +115,14 @@ namespace Fireland::Auth
         uint8_t number_of_keys;
 
         AuthReconnectProof_C() = default;
-        AuthReconnectProof_C(Fireland::Utils::ByteBuffer& buffer)
+        AuthReconnectProof_C(Firelands::Utils::ByteBuffer& buffer)
         {
             if (buffer.Size() <= 0)
                 throw std::runtime_error("Buffer too small for AuthReconnectProof_C");
             buffer >> R1 >> R2 >> R3;
             buffer>> number_of_keys;
         }
-        AuthReconnectProof_C& operator<<(Fireland::Utils::ByteBuffer& buffer)
+        AuthReconnectProof_C& operator<<(Firelands::Utils::ByteBuffer& buffer)
         {
             if (buffer.Size() <= 0)
                 throw std::runtime_error("Buffer too small for AuthReconnectProof_C");
@@ -134,4 +134,4 @@ namespace Fireland::Auth
 
     #pragma pack(pop)
 
-} // namespace Fireland::Auth
+} // namespace Firelands::Auth

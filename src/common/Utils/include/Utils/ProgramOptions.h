@@ -1,18 +1,18 @@
 #pragma once
 
 // ============================================================================
-// ProgramOptions — Command-line argument parsing for Fireland servers
+// ProgramOptions — Command-line argument parsing for Firelands servers
 //
 // Usage:
 //   int main(int argc, char* argv[])
 //   {
-//       Fireland::Utils::ProgramOptions opts("authserver", "0.1.0", "authserver.conf");
+//       Firelands::Utils::ProgramOptions opts("authserver", "0.1.0", "authserver.conf");
 //       if (!opts.Parse(argc, argv))
 //           return opts.ExitCode();
 //
-//       Fireland::Utils::Log::Init(opts.ConfigFile());
+//       Firelands::Utils::Log::Init(opts.ConfigFile());
 //       if (opts.Quiet())
-//           Fireland::Utils::Log::SetConsoleEnabled(false);
+//           Firelands::Utils::Log::SetConsoleEnabled(false);
 //   }
 // ============================================================================
 
@@ -22,7 +22,7 @@
 
 #include <boost/program_options.hpp>
 
-namespace Fireland::Utils
+namespace Firelands::Utils
 {
     class ProgramOptions final
     {
@@ -98,4 +98,4 @@ namespace Fireland::Utils
         bool        _quiet    = false;
         int         _exitCode = EXIT_SUCCESS;
     };
-} // namespace Fireland::Utils
+} // namespace Firelands::Utils

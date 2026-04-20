@@ -4,20 +4,20 @@
 #include <boost/test/unit_test.hpp>
 #include <Database/connection_pool_wrapper.h>
 
-using namespace Fireland::Database;
+using namespace Firelands::Database;
 
 BOOST_AUTO_TEST_CASE(connection_pool_wrapper_options_test)
 {
     connection_pool_wrapper_options opts;
     opts.username = "root";
     opts.password = "password";
-    opts.database = "fireland";
+    opts.database = "firelands";
     opts.hostname = "localhost";
     opts.port = 3306;
 
     BOOST_TEST(opts.username == "root");
     BOOST_TEST(opts.password == "password");
-    BOOST_TEST(opts.database == "fireland");
+    BOOST_TEST(opts.database == "firelands");
     BOOST_TEST(opts.hostname == "localhost");
     BOOST_TEST(opts.port == 3306);
 }

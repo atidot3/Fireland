@@ -16,7 +16,7 @@
 
 #include <Utils/Asio/Async.hpp>
 
-namespace Fireland::Database
+namespace Firelands::Database
 {
 	//main return type from functions
 	template<typename T>
@@ -233,4 +233,4 @@ namespace Fireland::Database
 		boost::asio::strand<boost::asio::any_io_executor> _exec;
 		std::unique_ptr<boost::mysql::connection_pool> _pool;
 	};
-} // Fireland::Database
+} // Firelands::Database

@@ -20,28 +20,28 @@ set(sources_files
     src/test.cpp
 )
 
-add_library(fireland_shared STATIC
+add_library(firelands_shared STATIC
   ${headers_files}
   ${sources_files}
 )
 
-target_include_directories(fireland_shared
+target_include_directories(firelands_shared
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/>
     $<INSTALL_INTERFACE:include/>
 )
 
-target_link_libraries(fireland_shared
+target_link_libraries(firelands_shared
   PUBLIC
-    fireland_utils
+    firelands_utils
 )
 
 # includes for internal use
-target_include_directories(fireland_shared PRIVATE 
+target_include_directories(firelands_shared PRIVATE 
   include/
   src/
 )
 
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${headers_files} ${sources_files})
 
-set_target_properties(fireland_shared PROPERTIES FOLDER "Common")
+set_target_properties(firelands_shared PROPERTIES FOLDER "Common")

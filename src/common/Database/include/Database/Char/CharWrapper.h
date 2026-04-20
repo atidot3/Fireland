@@ -12,11 +12,11 @@
 #include <Shared/Char/Characters.h>
 #include <Shared/Realm/Realmlist.h>
 
-namespace Fireland::Database::Char
+namespace Firelands::Database::Char
 {
     class CharWrapper
     {
-        friend class Fireland::Database::connection_pool_wrapper;
+        friend class Firelands::Database::connection_pool_wrapper;
     public:
         CharWrapper(const CharWrapper&) = delete;
         CharWrapper& operator=(const CharWrapper&) = delete;
@@ -32,19 +32,19 @@ namespace Fireland::Database::Char
         Utils::Async::async<bool> ping() noexcept;
 
         // -- Characters operations
-        Fireland::Utils::Async::async<bool> IsNameAvailable(std::string_view name) noexcept;
-        Fireland::Utils::Async::async<std::optional<characters>> GetCharacterByGuid(uint64_t guid) noexcept;
-        Fireland::Utils::Async::async<std::vector<characters>> GetCharactersForAccount(uint32_t accountid) noexcept;
-        Fireland::Utils::Async::async<std::optional<characters>> CreateCharacter(characters c) noexcept;
-        Fireland::Utils::Async::async<bool> DeleteCharacter(uint64_t guid, uint32_t accountid) noexcept;
+        Firelands::Utils::Async::async<bool> IsNameAvailable(std::string_view name) noexcept;
+        Firelands::Utils::Async::async<std::optional<characters>> GetCharacterByGuid(uint64_t guid) noexcept;
+        Firelands::Utils::Async::async<std::vector<characters>> GetCharactersForAccount(uint32_t accountid) noexcept;
+        Firelands::Utils::Async::async<std::optional<characters>> CreateCharacter(characters c) noexcept;
+        Firelands::Utils::Async::async<bool> DeleteCharacter(uint64_t guid, uint32_t accountid) noexcept;
     private:
         CharWrapper(boost::asio::any_io_executor executor, connection_pool_wrapper_options options) noexcept;
        
     private:
         static std::unique_ptr<CharWrapper> instance_;
         boost::asio::cancellation_signal _cancelSignal;
-		const Fireland::Database::connection_pool_wrapper_options _options;
+		const Firelands::Database::connection_pool_wrapper_options _options;
         connection_pool_wrapper _connection_pool;
     };
-} // namespace Fireland::Database::Char
-#define sCharDB Fireland::Database::Char::CharWrapper::Instance()
+} // namespace Firelands::Database::Char
+#define sCharDB Firelands::Database::Char::CharWrapper::Instance()

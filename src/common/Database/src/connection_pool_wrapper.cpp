@@ -6,7 +6,7 @@
 #include <Utils/NetUtils.h>
 #include <Utils/Log.h>
 
-using namespace Fireland::Database;
+using namespace Firelands::Database;
 
 // Helper: extract a readable error string from a Boost MySQL error.
 // error_with_diagnostics::what() returns a null-terminated string that
@@ -33,7 +33,7 @@ void connection_pool_wrapper::start(connection_pool_wrapper_options options) noe
     //already started
     if (_pool) return;
 
-    auto ip_host = Fireland::Utils::Net::ip_for(options.hostname);
+    auto ip_host = Firelands::Utils::Net::ip_for(options.hostname);
 	FL_LOG_INFO("Database", "> Starting database connection pool... (database {}:{} / {} with user '{}')", options.hostname, options.port, options.database, options.username);
 
     auto max_co = 5;

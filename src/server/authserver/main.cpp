@@ -1,5 +1,5 @@
 // ============================================================================
-// Fireland Auth Server — Entry point
+// Firelands Auth Server — Entry point
 //
 // SRP6-based authentication server for WoW Cataclysm (4.3.4).
 // Listens on 0.0.0.0:3724, handles LOGON_CHALLENGE, LOGON_PROOF, REALM_LIST.
@@ -27,17 +27,17 @@
 #include "Network/AuthSession.h"
 #include "Realm/Realm.h"
 
-Fireland::Utils::Async::async<bool> initiate_database(Fireland::Utils::IoContext& thread_pool)
+Firelands::Utils::Async::async<bool> initiate_database(Firelands::Utils::IoContext& thread_pool)
 {
     // Load database configuration and initialize the auth wrapper
-    Fireland::Database::connection_pool_wrapper_options dbOptions{
+    Firelands::Database::connection_pool_wrapper_options dbOptions{
         sConfig.get<std::string>(DATABASE_USER),
         sConfig.get<std::string>(DATABASE_PASSWORD),
         sConfig.get<std::string>(DATABASE_AUTH),
         sConfig.get<std::string>(DATABASE_HOST),
         sConfig.get<uint16_t>(DATABASE_PORT)
     };
-    Fireland::Database::Auth::AuthWrapper::Init(thread_pool.Get(), dbOptions);
+    Firelands::Database::Auth::AuthWrapper::Init(thread_pool.Get(), dbOptions);
     sAuthDB.start();
     if (!co_await sAuthDB.ping())
     {
@@ -50,7 +50,7 @@ Fireland::Utils::Async::async<bool> initiate_database(Fireland::Utils::IoContext
     co_return true;
 }
 
-Fireland::Utils::Async::async<void> async_main(Fireland::Utils::IoContext& thread_pool)
+Firelands::Utils::Async::async<void> async_main(Firelands::Utils::IoContext& thread_pool)
 {
     // Initialize the database connection pool and verify connectivity before starting the server.
     if (!co_await initiate_database(thread_pool))
@@ -62,10 +62,10 @@ Fireland::Utils::Async::async<void> async_main(Fireland::Utils::IoContext& threa
 	Realm::Init(thread_pool.Get());
 
     // Create the TCP listener with a session factory that constructs AuthSession instances.
-    Fireland::Network::TcpListener<Fireland::Auth::AuthSession> listener(
+    Firelands::Network::TcpListener<Firelands::Auth::AuthSession> listener(
         thread_pool,
         [](boost::asio::ip::tcp::socket socket) {
-            return std::make_shared<Fireland::Auth::AuthSession>(std::move(socket));
+            return std::make_shared<Firelands::Auth::AuthSession>(std::move(socket));
         }
     );
 
@@ -97,14 +97,14 @@ int main(int argc, char* argv[])
     SetConsoleOutputCP(CP_UTF8);
 #endif
 
-    Fireland::Utils::ProgramOptions opts("authserver", "0.1.0", "authserver.conf");
+    Firelands::Utils::ProgramOptions opts("authserver", "0.1.0", "authserver.conf");
     if (!opts.Parse(argc, argv))
         return opts.ExitCode();
 
     try
     {
-        Fireland::Utils::Log::Init(opts.ConfigFile());
-        if (opts.Quiet()) Fireland::Utils::Log::SetConsoleEnabled(false);
+        Firelands::Utils::Log::Init(opts.ConfigFile());
+        if (opts.Quiet()) Firelands::Utils::Log::SetConsoleEnabled(false);
         sConfig.load(opts.ConfigFile());
 
         // Fancy startup header
@@ -119,13 +119,13 @@ int main(int argc, char* argv[])
             << "   ╚═╝  ╚═╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝    \n"
             << "========================================\n"
             << "\033[0m"
-            << "  Project: Fireland Auth Server\n"
+            << "  Project: Firelands Auth Server\n"
             << "  Version: 0.1.0\n"
             << "  Config : " << opts.ConfigFile() << "\n"
             << "  Threads: " << (sConfig.get<uint32_t>(SERVER_THREAD_COUNT) == 0 ? std::thread::hardware_concurrency() : sConfig.get<uint32_t>(SERVER_THREAD_COUNT)) << "\n"
             << "========================================\n\n";
 
-        Fireland::Utils::IoContext ioContext(sConfig.get<uint32_t>(SERVER_THREAD_COUNT));
+        Firelands::Utils::IoContext ioContext(sConfig.get<uint32_t>(SERVER_THREAD_COUNT));
         boost::asio::co_spawn(ioContext.Get(), async_main(ioContext), boost::asio::detached);
         ioContext.Join();
         FL_LOG_INFO("AuthServer", "Shutdown complete.");

@@ -8,7 +8,7 @@
 
 #include <Utils/Configuration/Configuration_defs.hpp>
 
-namespace Fireland::Utils
+namespace Firelands::Utils
 {
     class Configuration final
     {
@@ -82,5 +82,5 @@ namespace Fireland::Utils
         auto it = _values.find(key);
         return it != _values.end() ? std::string_view(it->second) : defaultValue;
     }
-}; // namespace FireLand::Utils
-#define sConfig Fireland::Utils::Configuration::Instance()
+}; // namespace Firelands::Utils
+#define sConfig Firelands::Utils::Configuration::Instance()

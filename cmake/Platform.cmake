@@ -13,11 +13,11 @@ if(WIN32)
   )
 
   if(MSVC)
-    message(STATUS "[Fireland] Platform: Windows (MSVC ${MSVC_VERSION})")
+    message(STATUS "[Firelands] Platform: Windows (MSVC ${MSVC_VERSION})")
   elseif(MINGW)
-    message(STATUS "[Fireland] Platform: Windows (MinGW)")
+    message(STATUS "[Firelands] Platform: Windows (MinGW)")
   else()
-    message(STATUS "[Fireland] Platform: Windows (unknown compiler)")
+    message(STATUS "[Firelands] Platform: Windows (unknown compiler)")
   endif()
 
 elseif(APPLE)
@@ -27,14 +27,14 @@ elseif(APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS deployment target" FORCE)
   endif()
 
-  message(STATUS "[Fireland] Platform: macOS (deployment target ${CMAKE_OSX_DEPLOYMENT_TARGET})")
+  message(STATUS "[Firelands] Platform: macOS (deployment target ${CMAKE_OSX_DEPLOYMENT_TARGET})")
 
 elseif(UNIX)
   set(FIRELAND_PLATFORM "LINUX")
-  message(STATUS "[Fireland] Platform: Linux")
+  message(STATUS "[Firelands] Platform: Linux")
 
 else()
-  message(FATAL_ERROR "[Fireland] Unsupported platform")
+  message(FATAL_ERROR "[Firelands] Unsupported platform")
 endif()
 
 # ----------------------------------------------------------------------------
@@ -44,7 +44,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 8)
   set(FIRELAND_ARCH "x64")
 else()
   set(FIRELAND_ARCH "x86")
-  message(WARNING "[Fireland] 32-bit builds are not officially supported")
+  message(WARNING "[Firelands] 32-bit builds are not officially supported")
 endif()
 
-message(STATUS "[Fireland] Architecture: ${FIRELAND_ARCH}")
+message(STATUS "[Firelands] Architecture: ${FIRELAND_ARCH}")

@@ -6,7 +6,7 @@
 
 #include <Utils/Asio/Describe.hpp>
 
-namespace Fireland::Utils
+namespace Firelands::Utils
 {
     namespace Filesystem
     {

@@ -5,7 +5,7 @@
 #include <Utils/Asio/IoContext.h>
 #include <Utils/Log.h>
 
-using namespace Fireland::Utils;
+using namespace Firelands::Utils;
 
 IoContext::IoContext(std::size_t threadCount)
     : _pool(threadCount > 0 ? threadCount : std::thread::hardware_concurrency())

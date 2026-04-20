@@ -10,7 +10,7 @@
 #include <Utils/ByteBuffer.h>
 #include <Network/World/WorldPacket.h>
 
-namespace Fireland
+namespace Firelands
 {
     class UpdateData
     {
@@ -34,4 +34,4 @@ namespace Fireland
         Utils::ByteBuffer _data;
     };
 
-} // namespace Fireland
+} // namespace Firelands

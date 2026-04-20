@@ -4,9 +4,9 @@
 #include <Utils/Log.h>
 #include <Utils/Time.h>
 
-using namespace Fireland;
-using namespace Fireland::World;
-using namespace Fireland::Utils;
+using namespace Firelands;
+using namespace Firelands::World;
+using namespace Firelands::Utils;
 
 // Movement speeds matching TrinityCore 4.3.4 defaults
 static constexpr float SPEED_WALK        = 2.5f;

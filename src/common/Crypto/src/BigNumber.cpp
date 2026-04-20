@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <random>
 
-namespace Fireland::Crypto {
+namespace Firelands::Crypto {
 
 void BigNumber::SetBinary(std::span<const uint8_t> littleEndian)
 {
@@ -46,4 +46,4 @@ BigNumber BigNumber::ModExp(const BigNumber& exp, const BigNumber& mod) const
     return BigNumber(boost::multiprecision::powm(_val, exp._val, mod._val));
 }
 
-} // namespace Fireland::Crypto
+} // namespace Firelands::Crypto

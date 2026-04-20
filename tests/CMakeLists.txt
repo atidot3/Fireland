@@ -1,5 +1,5 @@
 # ============================================================================
-# Fireland — Unit tests (Boost.Test)
+# Firelands — Unit tests (Boost.Test)
 # ============================================================================
 
 # Ajout des sous-dossiers de tests

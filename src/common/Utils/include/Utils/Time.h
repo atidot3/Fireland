@@ -1,6 +1,6 @@
 #include <chrono>
 
-namespace Fireland::Utils::Time
+namespace Firelands::Utils::Time
 {
     static inline uint32_t CurrentGameTimeMs()
     {

@@ -28,7 +28,7 @@
 
 #include <Utils/ByteBuffer.h>
 
-namespace Fireland::World
+namespace Firelands::World
 {
     class WorldPacket : public Utils::ByteBuffer
     {
@@ -77,4 +77,4 @@ namespace Fireland::World
     
     std::ostream& operator<<(std::ostream& os, const WorldPacket& pkt);
 
-} // namespace Fireland::World
+} // namespace Firelands::World

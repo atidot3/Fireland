@@ -9,7 +9,7 @@
 #include <type_traits>
 #include <vector>
 
-namespace Fireland::Utils
+namespace Firelands::Utils
 {
     class ByteBuffer
     {
@@ -452,4 +452,4 @@ namespace Fireland::Utils
         std::vector<uint8_t> _storage;
     };
 
-} // namespace Fireland::Utils
+} // namespace Firelands::Utils

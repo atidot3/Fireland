@@ -14,7 +14,7 @@
 #include <cstdint>
 #include <span>
 
-namespace Fireland::Crypto {
+namespace Firelands::Crypto {
 
 class ARC4
 {
@@ -73,4 +73,4 @@ private:
     int _j = 0;
 };
 
-} // namespace Fireland::Crypto
+} // namespace Firelands::Crypto

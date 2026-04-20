@@ -1,5 +1,5 @@
 # ============================================================================
-# worldserver — Fireland World Server
+# worldserver — Firelands World Server
 # ============================================================================
 
 set(headers_files
@@ -16,11 +16,11 @@ add_executable(worldserver
 
 target_link_libraries(worldserver
   PRIVATE
-    fireland_compiler_options
-    fireland_crypto
-    fireland_network
-    fireland_database
-    fireland_game
+    firelands_compiler_options
+    firelands_crypto
+    firelands_network
+    firelands_database
+    firelands_game
 )
 
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${headers_files} ${sources_files})

@@ -11,11 +11,11 @@
 #include <Shared/Auth/Account.h>
 #include <Shared/Realm/Realmlist.h>
 
-namespace Fireland::Database::Auth
+namespace Firelands::Database::Auth
 {
     class AuthWrapper
     {
-        friend class Fireland::Database::connection_pool_wrapper;
+        friend class Firelands::Database::connection_pool_wrapper;
     public:
         AuthWrapper(const AuthWrapper&) = delete;
         AuthWrapper& operator=(const AuthWrapper&) = delete;
@@ -47,8 +47,8 @@ namespace Fireland::Database::Auth
     private:
         static std::unique_ptr<AuthWrapper> instance_;
         boost::asio::cancellation_signal _cancelSignal;
-		const Fireland::Database::connection_pool_wrapper_options _options;
+		const Firelands::Database::connection_pool_wrapper_options _options;
         connection_pool_wrapper _connection_pool;
     };
-} // namespace Fireland::Database::Auth
-#define sAuthDB Fireland::Database::Auth::AuthWrapper::Instance()
+} // namespace Firelands::Database::Auth
+#define sAuthDB Firelands::Database::Auth::AuthWrapper::Instance()

@@ -7,7 +7,7 @@
 
 #include <Utils/Log.h>
 
-namespace Fireland::Utils::Async
+namespace Firelands::Utils::Async
 {
     template <typename T>
     class AsyncQueue
@@ -67,4 +67,4 @@ namespace Fireland::Utils::Async
     private:
         channel_type _channel;
     };
-} // namespace Fireland::Utils::Async
+} // namespace Firelands::Utils::Async

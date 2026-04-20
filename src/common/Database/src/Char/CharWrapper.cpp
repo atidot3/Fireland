@@ -8,8 +8,8 @@
 
 #include <Utils/Log.h>
 
-using namespace Fireland::Database::Char;
-using namespace Fireland::Utils::Async;
+using namespace Firelands::Database::Char;
+using namespace Firelands::Utils::Async;
 using namespace std::chrono_literals;
 
 std::unique_ptr<CharWrapper> CharWrapper::instance_ = nullptr;
@@ -103,7 +103,7 @@ async<std::optional<characters>> CharWrapper::GetCharacterByGuid(uint64_t guid) 
     co_return result.value()[0];
 }
 
-Fireland::Utils::Async::async<std::vector<characters>> CharWrapper::GetCharactersForAccount(uint32_t accountid) noexcept
+Firelands::Utils::Async::async<std::vector<characters>> CharWrapper::GetCharactersForAccount(uint32_t accountid) noexcept
 {
     auto result = co_await _connection_pool.async_execute<std::vector<characters>>("SELECT * FROM characters WHERE account = ?", accountid);
     if (!result)
@@ -114,7 +114,7 @@ Fireland::Utils::Async::async<std::vector<characters>> CharWrapper::GetCharacter
 	co_return result.value();
 }
 
-Fireland::Utils::Async::async<std::optional<characters>> CharWrapper::CreateCharacter(characters c) noexcept
+Firelands::Utils::Async::async<std::optional<characters>> CharWrapper::CreateCharacter(characters c) noexcept
 {
     characters saved = std::move(c);
     auto result = co_await _connection_pool.async_insert<characters>(saved);
@@ -128,7 +128,7 @@ Fireland::Utils::Async::async<std::optional<characters>> CharWrapper::CreateChar
 	co_return saved;
 }
 
-Fireland::Utils::Async::async<bool> CharWrapper::DeleteCharacter(uint64_t guid, uint32_t accountid) noexcept
+Firelands::Utils::Async::async<bool> CharWrapper::DeleteCharacter(uint64_t guid, uint32_t accountid) noexcept
 {
     auto result = co_await _connection_pool.async_execute<boost::mysql::results>(
         "DELETE FROM characters WHERE guid = ? AND account = ?", guid, accountid);

@@ -13,7 +13,7 @@
 #include <boost/asio/system_timer.hpp>
 #include <boost/asio/strand.hpp>
 
-namespace Fireland::Utils::Async
+namespace Firelands::Utils::Async
 {
 	using Executor = boost::asio::any_io_executor;
 	using Strand = boost::asio::strand<Executor>;

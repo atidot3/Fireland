@@ -19,31 +19,31 @@ set(sources_files
     src/SRP6.cpp
 )
 
-add_library(fireland_crypto STATIC
+add_library(firelands_crypto STATIC
     ${headers_files}
     ${sources_files}
 )
 
-target_include_directories(fireland_crypto
+target_include_directories(firelands_crypto
     PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/>
     $<INSTALL_INTERFACE:include/>
 )
 
-target_link_libraries(fireland_crypto
+target_link_libraries(firelands_crypto
     PUBLIC
-        fireland_compiler_options
+        firelands_compiler_options
         Boost::headers
         Boost::multiprecision
         Boost::uuid
 )
 
 # includes for internal use
-target_include_directories(fireland_crypto PRIVATE 
+target_include_directories(firelands_crypto PRIVATE 
   include/
   src/
 )
 
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${headers_files} ${sources_files})
 
-set_target_properties(fireland_crypto PROPERTIES FOLDER "Common")
+set_target_properties(firelands_crypto PROPERTIES FOLDER "Common")

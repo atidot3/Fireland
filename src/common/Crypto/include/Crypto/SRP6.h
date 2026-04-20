@@ -13,7 +13,7 @@
 #include <Crypto/BigNumber.h>
 #include <Crypto/SHA1.h>
 
-namespace Fireland::Crypto {
+namespace Firelands::Crypto {
 
 class SRP6
 {
@@ -58,4 +58,4 @@ private:
     std::array<uint8_t, 40> _K{};
 };
 
-} // namespace Fireland::Crypto
+} // namespace Firelands::Crypto

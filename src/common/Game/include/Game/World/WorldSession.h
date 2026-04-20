@@ -30,7 +30,7 @@
 #include <Network/World/WorldOpcode.hpp>
 #include <Network/World/WorldPacket.h>
 
-namespace Fireland::World
+namespace Firelands::World
 {
     enum class WorldSessionStatus : uint32_t
     {
@@ -40,7 +40,7 @@ namespace Fireland::World
         AUTHED = 3
     };
     BOOST_DESCRIBE_ENUM(WorldSessionStatus, AWAIT_INITIALIZE, CONNECTION_INITIALIZED, AUTH_CHALLENGE, AUTHED)
-    using WorldPacketHandler = std::function<Fireland::Utils::Async::async<void>(Fireland::World::WorldPacket&)>;
+    using WorldPacketHandler = std::function<Firelands::Utils::Async::async<void>(Firelands::World::WorldPacket&)>;
 
     class WorldSession : public std::enable_shared_from_this<WorldSession>
     {
@@ -141,4 +141,4 @@ namespace Fireland::World
 		// -- Logout timer: cancellable with HandleLogoutCancelOpcode; if it expires, the session is closed and the player is logged out of the world.
 		boost::asio::steady_timer						   _logoutTimer;
     };
-} // namespace Fireland::World
+} // namespace Firelands::World

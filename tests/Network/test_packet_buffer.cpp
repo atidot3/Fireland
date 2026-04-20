@@ -6,8 +6,8 @@
 #include <Network/World/WorldPacket.h>
 #include <Utils/ByteBuffer.h>
 
-using namespace Fireland::World;
-using namespace Fireland::Utils;
+using namespace Firelands::World;
+using namespace Firelands::Utils;
 
 // ---- WorldPacket construction -----------------------------------------------
 

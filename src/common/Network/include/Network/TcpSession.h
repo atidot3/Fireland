@@ -26,7 +26,7 @@
 
 #include <Network/PacketBuffer.h>
 
-namespace Fireland::Network
+namespace Firelands::Network
 {
     class TcpSession : public std::enable_shared_from_this<TcpSession>
     {
@@ -80,4 +80,4 @@ namespace Fireland::Network
         boost::asio::steady_timer         _sendNotify;
         bool                              _closing = false;
     };
-} // namespace Fireland::Network
+} // namespace Firelands::Network

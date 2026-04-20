@@ -7,7 +7,7 @@
 
 #include <boost/asio/bind_cancellation_slot.hpp>
 
-using namespace Fireland::Utils::Async;
+using namespace Firelands::Utils::Async;
 using namespace std::chrono_literals;
 
 std::unique_ptr<Realm> Realm::instance_ = nullptr;
@@ -55,9 +55,9 @@ std::shared_ptr<const std::vector<realmlist>> Realm::GetRealms() const noexcept
     return _realms;
 }
 
-Fireland::Utils::Async::async<void> Realm::realm_update()
+Firelands::Utils::Async::async<void> Realm::realm_update()
 {
-    auto safe_lambda = [this]() -> Fireland::Utils::Async::async<void>
+    auto safe_lambda = [this]() -> Firelands::Utils::Async::async<void>
     {
         auto opt_db_realms = co_await sAuthDB.GetRealmlist();
         if (opt_db_realms && opt_db_realms->size() > 0)
@@ -66,7 +66,7 @@ Fireland::Utils::Async::async<void> Realm::realm_update()
             FL_LOG_INFO("Realmlist", "Updated realm list cache with {} realms", _realms->size());
             for (const auto& realm : *_realms)
             {
-                FL_LOG_INFO("Realmlist", " - {} {} ({}:{})", realm.name, Fireland::Utils::Describe::to_string(static_cast<realm_flag>(realm.flag)), realm.address, realm.port);
+                FL_LOG_INFO("Realmlist", " - {} {} ({}:{})", realm.name, Firelands::Utils::Describe::to_string(static_cast<realm_flag>(realm.flag)), realm.address, realm.port);
 			}
         }
         else
