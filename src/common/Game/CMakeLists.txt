@@ -8,6 +8,7 @@
 set(headers_files
     include/Game/Objects/UpdateData.h
 
+    include/Game/World/SessionManager.hpp
     include/Game/World/WorldSession.h
 )
 

@@ -7,9 +7,7 @@
 // ============================================================================
 
 #include <cstdint>
-#include <concepts>
 #include <functional>
-#include <memory>
 #include <string>
 
 #include <boost/asio/ip/tcp.hpp>
@@ -21,13 +19,10 @@
 #include <Utils/Asio/Async.hpp>
 #include <Utils/Asio/IoContext.h>
 
+#include <Network/NetDefines.h>
+
 namespace Fireland::Network
 {
-    template <typename T>
-    concept IsSession = requires(std::shared_ptr<T> s) {
-        { s->Start() } -> std::same_as<void>;
-    };
-
     template <IsSession SessionType>
     class TcpListener final
     {

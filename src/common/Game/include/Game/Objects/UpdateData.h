@@ -8,7 +8,7 @@
 #include <Shared/Char/MovementInfo.h>
 
 #include <Utils/ByteBuffer.h>
-#include <Network/World/WorldPacket.hpp>
+#include <Network/World/WorldPacket.h>
 
 namespace Fireland
 {

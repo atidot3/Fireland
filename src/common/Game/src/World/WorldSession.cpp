@@ -53,6 +53,10 @@ WorldSession::WorldSession(boost::asio::any_io_executor exec, boost::asio::ip::t
 
 WorldSession::~WorldSession() noexcept
 {
+	// dtor calls on sessionmanager.remove, so we can be sure that the session is no longer active at this point.
+    // todo
+
+	// Ensure all pending operations are cancelled and queues are closed to unblock any waiting coroutines.
     _logoutTimer.cancel();
     _recvQueue.close();
     _sendQueue.close();
@@ -693,12 +697,12 @@ async<void> WorldSession::SendLoop()
     
         if (packet.opcode() == NULL_OPCODE)
         {
-            FL_LOG_ERROR("Network", "Prevented sending of NULL_OPCODE");
+            FL_LOG_ERROR("WorldSession", "Prevented sending of NULL_OPCODE");
             co_return;
         }
         else if (packet.opcode() == UNKNOWN_OPCODE)
         {
-            FL_LOG_ERROR("Network", "Prevented sending of UNKNOWN_OPCODE");
+            FL_LOG_ERROR("WorldSession", "Prevented sending of UNKNOWN_OPCODE");
             co_return;
         }
 

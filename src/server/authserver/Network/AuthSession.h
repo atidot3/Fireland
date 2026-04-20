@@ -46,6 +46,8 @@ namespace Fireland::Auth
         ~AuthSession() noexcept;
 
         void Start();
+        void Close() {}
+        uint64_t GetId() const { return reinterpret_cast<uint64_t>(this); }
 
     private:
         Utils::Async::async<void> Run();

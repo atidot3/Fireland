@@ -28,7 +28,7 @@
 #include <Shared/Char/Characters.h>
 
 #include <Network/World/WorldOpcode.hpp>
-#include <Network/World/WorldPacket.hpp>
+#include <Network/World/WorldPacket.h>
 
 namespace Fireland::World
 {
@@ -49,6 +49,10 @@ namespace Fireland::World
         ~WorldSession() noexcept;
 
         void Start();
+        void Close() {}
+		uint64_t GetId() const { return reinterpret_cast<uint64_t>(this); }
+        /// Serialise, encrypt the SMSG header, and push the complete frame into the send queue.
+        void SendPacket(const WorldPacket& packet);
 
     private:
         Utils::Async::async<void> InitializeHandlers();
@@ -118,9 +122,6 @@ namespace Fireland::World
         /// Read a complete CMSG (header + payload) from the socket.
         /// Decrypts the header in-place; payload is appended to the returned packet.
         Utils::Async::async<WorldPacket> ReadClientPacket();
-
-		/// Serialise, encrypt the SMSG header, and push the complete frame into the send queue.
-        void SendPacket(const WorldPacket& packet);
 
     private:
         boost::asio::any_io_executor                       _exec;

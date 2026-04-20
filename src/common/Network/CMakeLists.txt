@@ -5,22 +5,18 @@
 # ============================================================================
 
 set(headers_files
-  include/Network/PacketBuffer.h
-  include/Network/SessionManager.h
+  include/Network/NetDefines.h
   include/Network/TcpListener.h
-  include/Network/TcpSession.h
 
   include/Network/Auth/AuthOpcode.hpp
   include/Network/Auth/AuthPacket.hpp
 
   include/Network/World/WorldOpcode.hpp
-  include/Network/World/WorldPacket.hpp
+  include/Network/World/WorldPacket.h
 )
 
 set(sources_files
-  src/PacketBuffer.cpp
-  src/SessionManager.cpp
-  src/TcpSession.cpp
+  src/Network/WorldPacket.cpp
 )
 
 add_library(fireland_network STATIC
