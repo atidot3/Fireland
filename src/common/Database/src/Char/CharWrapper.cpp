@@ -124,11 +124,11 @@ Fireland::Utils::Async::async<std::optional<characters>> CharWrapper::CreateChar
         co_return std::nullopt;
     }
     if (result.value().affected_rows() == 0) co_return std::nullopt;
-    saved.guid = static_cast<uint64_t>(result.value().last_insert_id());
+    saved.guid = static_cast<uint32_t>(result.value().last_insert_id());
 	co_return saved;
 }
 
-Fireland::Utils::Async::async<bool> CharWrapper::DeleteCharacter(uint32_t guid, uint32_t accountid) noexcept
+Fireland::Utils::Async::async<bool> CharWrapper::DeleteCharacter(uint64_t guid, uint32_t accountid) noexcept
 {
     auto result = co_await _connection_pool.async_execute<boost::mysql::results>(
         "DELETE FROM characters WHERE guid = ? AND account = ?", guid, accountid);

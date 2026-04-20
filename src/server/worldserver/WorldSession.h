@@ -133,6 +133,7 @@ namespace Fireland::World
 
         std::string                                        _username;
         uint32_t                                           _accountId;
+		uint32_t                                           _characterId;
         uint32_t                                           _serverSeed;
         Crypto::WorldCrypt                                 _crypt;
 

@@ -40,6 +40,7 @@ WorldSession::WorldSession(boost::asio::any_io_executor exec, boost::asio::ip::t
     , _handlers{}
     , _username{}
     , _accountId{0}
+    , _characterId{0}
     , _serverSeed{0}
 	, _crypt{}
     , _logoutTimer{ _exec }
@@ -392,6 +393,9 @@ async<void> WorldSession::HandleLogoutRequestOpcode(WorldPacket& /*packet*/)
             FL_LOG_INFO("WorldSession", "[{}] Logout timer expired, closing connection", self->_remoteAddress);
             WorldPacket data(SMSG_LOGOUT_COMPLETE, 0);
             self->SendPacket(data);
+
+			// cleanup session state / variables as needed
+            self->_characterId = 0;
         }
     }, boost::asio::detached);
 }
@@ -490,9 +494,9 @@ async<void> WorldSession::HandleRequestAccountData(WorldPacket& packet)
 async<void> WorldSession::HandleUpdateAccountData(WorldPacket& packet)
 {
     uint32_t type      = packet.Read<uint32_t>();
-    uint32_t timestamp = packet.Read<uint32_t>();
-    uint32_t size      = packet.Read<uint32_t>();
-    (void)timestamp; (void)size;
+    [[maybe_unused]] uint32_t timestamp = packet.Read<uint32_t>();
+    [[maybe_unused]] uint32_t size      = packet.Read<uint32_t>();
+
     // Acknowledge — we don't persist account data yet
     WorldPacket ack(SMSG_UPDATE_ACCOUNT_DATA_COMPLETE, 8);
     ack << uint32_t(type);
@@ -932,11 +936,11 @@ async<void> WorldSession::HandlePlayerLogin(WorldPacket& packet)
     if (hasByte[1]) guidBytes[1] = packet.Read<uint8_t>() ^ 1;
     if (hasByte[7]) guidBytes[7] = packet.Read<uint8_t>() ^ 1;
 
-    uint32_t charGuid = static_cast<uint32_t>(rawGuid);
-    auto charOpt = co_await sCharDB.GetCharacterByGuid(charGuid);
+    _characterId = static_cast<uint32_t>(rawGuid);
+    auto charOpt = co_await sCharDB.GetCharacterByGuid(_characterId);
     if (!charOpt)
     {
-        FL_LOG_ERROR("WorldSession", "[{}] Character GUID {} not found", _remoteAddress, charGuid);
+        FL_LOG_ERROR("WorldSession", "[{}] Character GUID {} not found", _remoteAddress, _characterId);
         co_return;
     }
     const auto& ch = *charOpt;
@@ -976,13 +980,13 @@ async<void> WorldSession::HandlePlayerLogin(WorldPacket& packet)
     // 5. LOGIN_VERIFY_WORLD must come AFTER CREATE_OBJECT2 + MoveSetActiveMover
     WorldPacket verify(SMSG_LOGIN_VERIFY_WORLD, 20);
     verify << uint32_t(ch.mapId) << spawnX << spawnY << spawnZ << float(0.0f);
-    co_return SendPacket(verify);
+    SendPacket(verify);
 
     co_await SendLoginSetTimeSpeed();
 
     WorldPacket timeSync(SMSG_TIME_SYNC_REQ);
     timeSync << uint32_t(0);
-    co_return SendPacket(timeSync);
+    SendPacket(timeSync);
 
     co_await SendTutorialFlags();
 
@@ -1003,17 +1007,16 @@ async<void> WorldSession::HandleMessageChat(WorldPacket& packet)
     }
 
     std::string message = packet.ReadString();
-	auto _playerGuid = 1; // Placeholder GUID for the player sending the message
-    FL_LOG_DEBUG("WorldSession", "[{}] Chat from {} : [{}] {}", _remoteAddress, _playerGuid, type, message);
+    FL_LOG_DEBUG("WorldSession", "[{}] Chat from {} : [{}] {}", _remoteAddress, _characterId, type, message);
 
     // Echo back to nearby players (spatial chat base)
     // For now, only send back to the sender
     WorldPacket response(SMSG_MESSAGECHAT);
     response << static_cast<uint8_t>(type);
     response << static_cast<uint32_t>(language);
-    response << static_cast<uint64_t>(_playerGuid);
+    response << static_cast<uint64_t>(_characterId);
     response << static_cast<uint32_t>(0);           // Unk
-    response << static_cast<uint64_t>(_playerGuid); // Target? or Sender? depends on type
+    response << static_cast<uint64_t>(_characterId); // Target? or Sender? depends on type
     response << static_cast<uint32_t>(message.length() + 1);
     response << message;
     response << static_cast<uint8_t>(0); // Tag
