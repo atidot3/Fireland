@@ -129,5 +129,8 @@ namespace Fireland::World
         uint32_t                                            _accountId;
         uint32_t                                            _serverSeed;
         Crypto::WorldCrypt                                  _crypt;
+
+		// -- Logout timer: cancellable with HandleLogoutCancelOpcode; if it expires, the session is closed and the player is logged out of the world.
+		boost::asio::steady_timer						    _logoutTimer;
     };
 } // namespace Fireland::World

@@ -38,6 +38,8 @@ WorldSession::WorldSession(boost::asio::ip::tcp::socket socket) noexcept
     , _username{}
     , _accountId{0}
     , _serverSeed{0}
+	, _crypt{}
+    , _logoutTimer{ socket.get_executor() }
 {
     boost::system::error_code ec;
     auto ep = _socket.remote_endpoint(ec);
@@ -60,14 +62,14 @@ void WorldSession::Start()
 
 async<void> WorldSession::InitializeHandlers()
 {
-    _handlers[CMSG_CHAR_ENUM]                       = {[this](WorldPacket& packet) { return HandleCharEnum(packet); }};
+    _handlers[CMSG_CHAR_ENUM]                       = { [this](WorldPacket& packet) { return HandleCharEnum(packet); }};
     _handlers[CMSG_CHAR_CREATE]                     = { [this](WorldPacket& packet) { return HandleCharCreate(packet); } };
     _handlers[CMSG_CHAR_DELETE]                     = { [this](WorldPacket& packet) { return HandleCharDelete(packet); } };
     _handlers[CMSG_PLAYER_LOGIN]                    = { [this](WorldPacket& packet) { return HandlePlayerLogin(packet); } };
 
     _handlers[CMSG_READY_FOR_ACCOUNT_DATA_TIMES]    = { [this](WorldPacket& packet) { return HandleReadyForAccountDataTimes(packet); } };
-    _handlers[CMSG_REALM_SPLIT]                     = {[this](WorldPacket& packet) { return HandleRealmSplit(packet); }};
-    _handlers[CMSG_PING]                            = {[this](WorldPacket& packet) { return HandlePing(packet); }};
+    _handlers[CMSG_REALM_SPLIT]                     = { [this](WorldPacket& packet) { return HandleRealmSplit(packet); }};
+    _handlers[CMSG_PING]                            = { [this](WorldPacket& packet) { return HandlePing(packet); }};
 
     _handlers[CMSG_TIME_SYNC_RESP]                  = { [this](WorldPacket& /*packet*/) -> async<void> { /*No response needed*/ co_return; }};
     _handlers[CMSG_LOG_DISCONNECT]                  = { [this](WorldPacket& packet) { return HandlePlayerLogoutOpcode(packet); }};
@@ -80,11 +82,11 @@ async<void> WorldSession::InitializeHandlers()
     _handlers[CMSG_REQUEST_ACCOUNT_DATA]            = { [this](WorldPacket& packet) { return HandleRequestAccountData(packet); }};
     _handlers[CMSG_UPDATE_ACCOUNT_DATA]             = { [this](WorldPacket& packet) { return HandleUpdateAccountData(packet); }};
 
-    _handlers[MSG_MOVE_HEARTBEAT]                   = {[this](WorldPacket& packet) { return HandleMovement(packet); }};
-    _handlers[MSG_MOVE_START_FORWARD]               = {[this](WorldPacket& packet) { return HandleMovement(packet); }};
-    _handlers[MSG_MOVE_START_BACKWARD]              = {[this](WorldPacket& packet) { return HandleMovement(packet); }};
-    _handlers[MSG_MOVE_STOP]                        = {[this](WorldPacket& packet) { return HandleMovement(packet); }};
-    _handlers[MSG_MOVE_SET_FACING]                  = {[this](WorldPacket& packet) { return HandleMovement(packet); }};
+    _handlers[MSG_MOVE_HEARTBEAT]                   = { [this](WorldPacket& packet) { return HandleMovement(packet); }};
+    _handlers[MSG_MOVE_START_FORWARD]               = { [this](WorldPacket& packet) { return HandleMovement(packet); }};
+    _handlers[MSG_MOVE_START_BACKWARD]              = { [this](WorldPacket& packet) { return HandleMovement(packet); }};
+    _handlers[MSG_MOVE_STOP]                        = { [this](WorldPacket& packet) { return HandleMovement(packet); }};
+    _handlers[MSG_MOVE_SET_FACING]                  = { [this](WorldPacket& packet) { return HandleMovement(packet); }};
     _handlers[CMSG_LOADING_SCREEN_NOTIFY]           = { [this](WorldPacket& packet) { return HandleLoadingScreenNotify(packet); }};
     _handlers[CMSG_VIOLENCE_LEVEL]                  = { [this](WorldPacket& packet) { return HandleViolenceLevel(packet); }};
 
@@ -362,8 +364,6 @@ async<void> WorldSession::SendAuthResponse(ResponseCodes result)
 
 async<void> WorldSession::HandleLogoutRequestOpcode(WorldPacket& /*packet*/)
 {
-    FL_LOG_DEBUG("WorldSession", "[{}] Recvd CMSG_LOGOUT_REQUEST Message", _remoteAddress);
-
     bool instantLogout = false;
 
     // 0 success
@@ -375,19 +375,30 @@ async<void> WorldSession::HandleLogoutRequestOpcode(WorldPacket& /*packet*/)
     data << reason;
     data << instantLogout;
     co_await SendPacket(data);
+    FL_LOG_DEBUG("WorldSession", "[{}] Sent SMSG_LOGOUT_RESPONSE Message (reason={}, instant={})", _remoteAddress, reason, instantLogout);
 
-	// need to start the timer and then logout (kick ?), otherwise the client just stays online and doesn't disconnect
+	// Async callback after 20 seconds to close the connection if the client hasn't cancelled logout by then.
+    boost::asio::co_spawn(_socket.get_executor(), [self = shared_from_this()]() -> async<void>
+    {
+        self->_logoutTimer = boost::asio::steady_timer(self->_socket.get_executor(), std::chrono::seconds(20));
+        auto [ec] = co_await self->_logoutTimer.async_wait(Utils::Async::tuple_awaitable_token);
+        if (!ec)
+        {
+            WorldPacket data(SMSG_LOGOUT_COMPLETE, 0);
+            co_await self->SendPacket(data);
+            FL_LOG_INFO("WorldSession", "[{}] Logout timer expired, closing connection", self->_remoteAddress);
+        }
+    }, boost::asio::detached);
 }
 
 async<void> WorldSession::HandlePlayerLogoutOpcode(WorldPacket& /*packet*/)
 {
-    FL_LOG_DEBUG("WorldSession", "[{}] Recvd CMSG_PLAYER_LOGOUT Message", _remoteAddress);
     co_return;
 }
 
 async<void> WorldSession::HandleLogoutCancelOpcode(WorldPacket& /*packet*/)
 {
-    FL_LOG_DEBUG("WorldSession", "[{}] Recvd CMSG_LOGOUT_CANCEL Message", _remoteAddress);
+    _logoutTimer.cancel();
 
     WorldPacket data(SMSG_LOGOUT_CANCEL_ACK, 0);
     co_await SendPacket(data);
