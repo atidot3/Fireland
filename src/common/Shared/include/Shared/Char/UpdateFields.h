@@ -18,11 +18,9 @@ namespace Fireland
     enum UpdateType : uint8_t
     {
         UPDATETYPE_VALUES               = 0x00,
-        //UPDATETYPE_MOVEMENT             = 0x01,
         UPDATETYPE_CREATE_OBJECT        = 0x01,
         UPDATETYPE_CREATE_OBJECT2       = 0x02,
         UPDATETYPE_OUT_OF_RANGE_OBJECTS = 0x03,
-        UPDATETYPE_NEAR_OBJECTS         = 0x05
    };
 
     // Auto generated for version 4, 3, 4, 15595 (matches TrinityCore)

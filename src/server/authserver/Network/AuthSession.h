@@ -21,7 +21,7 @@
 #include <Utils/Async.hpp>
 #include <Crypto/SRP6.h>
 
-enum class AuthStatus
+enum class AuthSessionStatus
 {
     LOGON_CHALLENGE,
     LOGON_PROOF,
@@ -29,11 +29,11 @@ enum class AuthStatus
 	WAIT_FOR_REALM_LIST,
     CLOSED
 };
-BOOST_DESCRIBE_ENUM(AuthStatus, LOGON_CHALLENGE, LOGON_PROOF, RECONNECT_PROOF, WAIT_FOR_REALM_LIST, CLOSED)
+BOOST_DESCRIBE_ENUM(AuthSessionStatus, LOGON_CHALLENGE, LOGON_PROOF, RECONNECT_PROOF, WAIT_FOR_REALM_LIST, CLOSED)
 
 struct AuthHandler
 {
-    AuthStatus status;
+    AuthSessionStatus status;
     std::function<Fireland::Utils::Async::async<void>(Fireland::Auth::AuthPacket)> handler;
 };
 
@@ -58,7 +58,7 @@ namespace Fireland::Auth
 
     private:
         boost::asio::ip::tcp::socket                _socket;
-        AuthStatus                                  _status;
+        AuthSessionStatus                           _status;
         std::string                                 _remoteAddress;
         std::unordered_map<AuthOpcode, AuthHandler> _handlers;
 

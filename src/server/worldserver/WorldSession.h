@@ -31,6 +31,16 @@
 
 namespace Fireland::World
 {
+    enum class WorldSessionStatus : uint32_t
+    {
+        AWAIT_INITIALIZE = 0,
+        CONNECTION_INITIALIZED = 1,
+        AUTH_CHALLENGE = 2,
+        AUTHED = 3
+    };
+    BOOST_DESCRIBE_ENUM(WorldSessionStatus, AWAIT_INITIALIZE, CONNECTION_INITIALIZED, AUTH_CHALLENGE, AUTHED)
+    using WorldPacketHandler = std::function<Fireland::Utils::Async::async<void>(Fireland::World::WorldPacket&)>;
+
     class WorldSession : public std::enable_shared_from_this<WorldSession>
     {
     public:
@@ -40,6 +50,7 @@ namespace Fireland::World
         void Start();
 
     private:
+        Utils::Async::async<void> InitializeHandlers();
         Utils::Async::async<void> Run();
 
         // ---- Connection initialization (Cata 4.3.4) ----
@@ -53,7 +64,7 @@ namespace Fireland::World
         Utils::Async::async<void> SendAddonInfo();
         Utils::Async::async<void> SendClientCacheVersion();
         Utils::Async::async<void> SendTutorialFlags();
-        Utils::Async::async<void> SendAccountDataTimes();
+        Utils::Async::async<void> SendAccountDataTimes(uint32_t mask);
         Utils::Async::async<void> SendFeatureSystemStatus();
         Utils::Async::async<void> SendRealmSplit(uint32_t realmId);
         Utils::Async::async<void> SendSetTimeZoneInformation();
@@ -68,6 +79,8 @@ namespace Fireland::World
 
         // ---- Post-auth packet handlers ----
         Utils::Async::async<void> HandleReadyForAccountDataTimes(WorldPacket& packet);
+        Utils::Async::async<void> HandleRequestAccountData(WorldPacket& packet);
+        Utils::Async::async<void> HandleUpdateAccountData(WorldPacket& packet);
         Utils::Async::async<void> HandleCharEnum(WorldPacket& packet);
         Utils::Async::async<void> HandleRealmSplit(WorldPacket& packet);
         Utils::Async::async<void> SendCharEnum();
@@ -83,6 +96,9 @@ namespace Fireland::World
         Utils::Async::async<void> SendActionButtons();
         Utils::Async::async<void> SendLoginSetTimeSpeed();
         Utils::Async::async<void> SendCreatePlayerObject(const characters& ch, float x, float y, float z);
+        Utils::Async::async<void> HandleLogoutRequestOpcode(WorldPacket& packet);
+        Utils::Async::async<void> HandlePlayerLogoutOpcode(WorldPacket& packet);
+        Utils::Async::async<void> HandleLogoutCancelOpcode(WorldPacket& packet);
 		Utils::Async::async<void> HandleMessageChat(WorldPacket& packet);
 		Utils::Async::async<void> HandleMovement(WorldPacket& packet);
         Utils::Async::async<void> SendClientControlUpdate(uint64_t guid, bool allowMove);
@@ -103,13 +119,15 @@ namespace Fireland::World
         /// Serialise, encrypt the SMSG header, and write the packet to the socket.
         Utils::Async::async<void> SendPacket(const WorldPacket& packet);
 
-        boost::asio::ip::tcp::socket     _socket;
-        std::string                      _remoteAddress;
+    private:
+        boost::asio::ip::tcp::socket                        _socket;
+        std::string                                         _remoteAddress;
+		WorldSessionStatus                                  _sessionStatus;
+        std::unordered_map<uint32_t, WorldPacketHandler>    _handlers;
 
-        std::string  _username;
-        uint32_t     _accountId;
-        uint32_t     _serverSeed;
-        bool         _authenticated;
-        Crypto::WorldCrypt _crypt;
+        std::string                                         _username;
+        uint32_t                                            _accountId;
+        uint32_t                                            _serverSeed;
+        Crypto::WorldCrypt                                  _crypt;
     };
 } // namespace Fireland::World

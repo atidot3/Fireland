@@ -33,10 +33,11 @@ using ByteBuffer = Fireland::Utils::ByteBuffer;
 WorldSession::WorldSession(boost::asio::ip::tcp::socket socket) noexcept
     : _socket(std::move(socket))
     , _remoteAddress{"<unknown>"}
+	, _sessionStatus{ WorldSessionStatus::AWAIT_INITIALIZE }
+    , _handlers{}
     , _username{}
     , _accountId{0}
     , _serverSeed{0}
-    , _authenticated{false}
 {
     boost::system::error_code ec;
     auto ep = _socket.remote_endpoint(ec);
@@ -57,9 +58,45 @@ void WorldSession::Start()
     boost::asio::co_spawn(_socket.get_executor(), self->Run(), boost::asio::detached);
 }
 
+async<void> WorldSession::InitializeHandlers()
+{
+    _handlers[CMSG_CHAR_ENUM]                       = {[this](WorldPacket& packet) { return HandleCharEnum(packet); }};
+    _handlers[CMSG_CHAR_CREATE]                     = { [this](WorldPacket& packet) { return HandleCharCreate(packet); } };
+    _handlers[CMSG_CHAR_DELETE]                     = { [this](WorldPacket& packet) { return HandleCharDelete(packet); } };
+    _handlers[CMSG_PLAYER_LOGIN]                    = { [this](WorldPacket& packet) { return HandlePlayerLogin(packet); } };
+
+    _handlers[CMSG_READY_FOR_ACCOUNT_DATA_TIMES]    = { [this](WorldPacket& packet) { return HandleReadyForAccountDataTimes(packet); } };
+    _handlers[CMSG_REALM_SPLIT]                     = {[this](WorldPacket& packet) { return HandleRealmSplit(packet); }};
+    _handlers[CMSG_PING]                            = {[this](WorldPacket& packet) { return HandlePing(packet); }};
+
+    _handlers[CMSG_TIME_SYNC_RESP]                  = { [this](WorldPacket& /*packet*/) -> async<void> { /*No response needed*/ co_return; }};
+    _handlers[CMSG_LOG_DISCONNECT]                  = { [this](WorldPacket& packet) { return HandlePlayerLogoutOpcode(packet); }};
+    _handlers[CMSG_LOGOUT_REQUEST]                  = { [this](WorldPacket& packet) { return HandleLogoutRequestOpcode(packet); }};
+    _handlers[CMSG_LOGOUT_CANCEL]                   = { [this](WorldPacket& packet) { return HandleLogoutCancelOpcode(packet); }};
+
+    _handlers[CMSG_MESSAGECHAT]                     = { [this](WorldPacket& packet) { return HandleMessageChat(packet); }};
+    _handlers[CMSG_SET_ACTIVE_MOVER]                = { [this](WorldPacket& /*packet*/) -> async<void> { /*No response needed ?*/ co_return; } };
+
+    _handlers[CMSG_REQUEST_ACCOUNT_DATA]            = { [this](WorldPacket& packet) { return HandleRequestAccountData(packet); }};
+    _handlers[CMSG_UPDATE_ACCOUNT_DATA]             = { [this](WorldPacket& packet) { return HandleUpdateAccountData(packet); }};
+
+    _handlers[MSG_MOVE_HEARTBEAT]                   = {[this](WorldPacket& packet) { return HandleMovement(packet); }};
+    _handlers[MSG_MOVE_START_FORWARD]               = {[this](WorldPacket& packet) { return HandleMovement(packet); }};
+    _handlers[MSG_MOVE_START_BACKWARD]              = {[this](WorldPacket& packet) { return HandleMovement(packet); }};
+    _handlers[MSG_MOVE_STOP]                        = {[this](WorldPacket& packet) { return HandleMovement(packet); }};
+    _handlers[MSG_MOVE_SET_FACING]                  = {[this](WorldPacket& packet) { return HandleMovement(packet); }};
+    _handlers[CMSG_LOADING_SCREEN_NOTIFY]           = { [this](WorldPacket& packet) { return HandleLoadingScreenNotify(packet); }};
+    _handlers[CMSG_VIOLENCE_LEVEL]                  = { [this](WorldPacket& packet) { return HandleViolenceLevel(packet); }};
+
+    _handlers[CMSG_QUERY_QUESTS_COMPLETED]          = { [this](WorldPacket& packet) { return HandleQueryQuestsCompleted(packet); }};
+
+    co_return;
+}
+
 async<void> WorldSession::Run()
 {
     auto self = shared_from_this();
+    co_await InitializeHandlers();
     FL_LOG_INFO("WorldSession", "[{}] Client connected", _remoteAddress);
 
     try
@@ -69,7 +106,7 @@ async<void> WorldSession::Run()
         co_await SendAuthChallenge();
         co_await HandleAuthSession();
 
-        if (_authenticated)
+        if (_sessionStatus == WorldSessionStatus::AUTHED)
             co_await PacketLoop();
     }
     catch (const boost::system::system_error& e)
@@ -89,6 +126,7 @@ async<void> WorldSession::Run()
 
 async<void> WorldSession::SendConnectionInit()
 {
+	_sessionStatus = WorldSessionStatus::AWAIT_INITIALIZE;
     // Non-standard frame: [uint16_be size][string] -- no opcode field.
     auto len = static_cast<uint16_t>(SERVER_CONNECTION_INIT.size());
 
@@ -97,9 +135,7 @@ async<void> WorldSession::SendConnectionInit()
            << static_cast<uint8_t>(len & 0xFF);
     packet.Append(SERVER_CONNECTION_INIT.data(), SERVER_CONNECTION_INIT.size());
 
-    FL_LOG_DEBUG("WorldSession", "[{}] Sending connection init ({} bytes)",
-        _remoteAddress, packet.Size());
-
+    FL_LOG_DEBUG("WorldSession", "[{}] Sending connection init ({} bytes)",_remoteAddress, packet.Size());
     co_await boost::asio::async_write(_socket, boost::asio::buffer(packet.Storage()), boost::asio::use_awaitable);
 }
 
@@ -123,6 +159,7 @@ async<void> WorldSession::ReadConnectionInit()
         co_return;
     }
 
+    _sessionStatus = WorldSessionStatus::CONNECTION_INITIALIZED;
     FL_LOG_DEBUG("WorldSession", "[{}] Connection init handshake completed", _remoteAddress);
 }
 
@@ -149,6 +186,7 @@ async<void> WorldSession::SendAuthChallenge()
 
     FL_LOG_DEBUG("WorldSession", "[{}] Sending SMSG_AUTH_CHALLENGE (seed=0x{:08X})", _remoteAddress, _serverSeed);
 
+    _sessionStatus = WorldSessionStatus::AUTH_CHALLENGE;
     co_await SendPacket(packet);
 }
 
@@ -270,7 +308,7 @@ async<void> WorldSession::HandleAuthSession()
     }
 
     FL_LOG_INFO("WorldSession", "[{}] '{}' authenticated successfully", _remoteAddress, _username);
-    _authenticated = true;
+    _sessionStatus = WorldSessionStatus::AUTHED;
     _accountId = accountOpt->id;
 
     // Init ARC4 with the per-session seeds sent in SMSG_AUTH_CHALLENGE.
@@ -281,22 +319,6 @@ async<void> WorldSession::HandleAuthSession()
     // Precise order and content in 4.3.4 is critical for the client to proceed to
     // Character Enum.
     co_await SendAuthResponse(ResponseCodes::AUTH_OK);
-    /*co_await SendAddonInfo();
-    co_await SendClientCacheVersion();
-    co_await SendTutorialFlags();
-    co_await SendAccountRestrictedUpdate();
-    co_await SendRealmSplit(realmId);
-    co_await SendSetTimeZoneInformation();
-    co_await SendFeatureSystemStatus();
-    co_await SendMotd();
-    co_await SendLearnedDanceMoves();
-    co_await SendInitialRaidGroupError();
-    co_await SendSetDfFastLaunchResources();*/
-
-    // Note: SMSG_ACCOUNT_DATA_TIMES, SMSG_REALM_SPLIT, and
-    // SMSG_FEATURE_SYSTEM_STATUS are now sent reactively when the client requests
-    // them (via CMSG_READY_FOR_ACCOUNT_DATA_TIMES, etc.) Sending them proactively
-    // here can cause some 15595 clients to hang.
 }
 
 async<void> WorldSession::SendAuthResponse(ResponseCodes result)
@@ -336,6 +358,41 @@ async<void> WorldSession::SendAuthResponse(ResponseCodes result)
     FL_LOG_DEBUG("WorldSession", "[{}] AUTH_RESPONSE RAW: {}", _remoteAddress, Fireland::Utils::StringUtils::HexStr(response.Data()));
 
     co_await SendPacket(response);
+}
+
+async<void> WorldSession::HandleLogoutRequestOpcode(WorldPacket& /*packet*/)
+{
+    FL_LOG_DEBUG("WorldSession", "[{}] Recvd CMSG_LOGOUT_REQUEST Message", _remoteAddress);
+
+    bool instantLogout = false;
+
+    // 0 success
+	// 1 combat
+	// 2 duel
+    uint32_t reason = 0;
+
+    WorldPacket data(SMSG_LOGOUT_RESPONSE, 1 + 4);
+    data << reason;
+    data << instantLogout;
+    co_await SendPacket(data);
+
+	// need to start the timer and then logout (kick ?), otherwise the client just stays online and doesn't disconnect
+}
+
+async<void> WorldSession::HandlePlayerLogoutOpcode(WorldPacket& /*packet*/)
+{
+    FL_LOG_DEBUG("WorldSession", "[{}] Recvd CMSG_PLAYER_LOGOUT Message", _remoteAddress);
+    co_return;
+}
+
+async<void> WorldSession::HandleLogoutCancelOpcode(WorldPacket& /*packet*/)
+{
+    FL_LOG_DEBUG("WorldSession", "[{}] Recvd CMSG_LOGOUT_CANCEL Message", _remoteAddress);
+
+    WorldPacket data(SMSG_LOGOUT_CANCEL_ACK, 0);
+    co_await SendPacket(data);
+
+    FL_LOG_DEBUG("WorldSession", "[{}] Sent SMSG_LOGOUT_CANCEL_ACK Message", _remoteAddress);
 }
 
 async<void> WorldSession::SendAddonInfo()
@@ -394,14 +451,46 @@ async<void> WorldSession::SendInitialRaidGroupError()
     FL_LOG_INFO("WorldSession", "[{}] SMSG_INITIAL_RAID_GROUP_ERROR sent", _remoteAddress);
 }
 
-async<void> WorldSession::SendAccountDataTimes()
+async<void> WorldSession::SendAccountDataTimes(uint32_t mask)
 {
+    // mask=0x15: global (config/bindings/macros) — 3 timestamps
+    // mask=0xEA: per-character — 5 timestamps
     WorldPacket data(SMSG_ACCOUNT_DATA_TIMES);
-    data << static_cast<uint32_t>(std::time(nullptr)); // ServerTime
-    data << uint8_t(1);                                // Unk
-    data << uint32_t(0);                               // Mask (0 means no per-type times)
+    data << static_cast<uint32_t>(std::time(nullptr));
+    data << uint8_t(1);
+    data << uint32_t(mask);
+    for (uint32_t i = 0; i < 8; ++i)
+        if (mask & (1u << i))
+            data << uint32_t(0); // timestamp 0 = no data stored yet
     co_await SendPacket(data);
-    FL_LOG_INFO("WorldSession", "[{}] SMSG_ACCOUNT_DATA_TIMES sent", _remoteAddress);
+    FL_LOG_INFO("WorldSession", "[{}] SMSG_ACCOUNT_DATA_TIMES sent (mask=0x{:02X})", _remoteAddress, mask);
+}
+
+async<void> WorldSession::HandleRequestAccountData(WorldPacket& packet)
+{
+    uint32_t type = packet.Read<uint32_t>();
+    if (type >= 8) co_return;
+
+    // Respond with empty data for this type
+    WorldPacket data(SMSG_UPDATE_ACCOUNT_DATA, 8 + 4 + 4 + 4);
+    data << uint64_t(0);        // GUID (0 = account-wide)
+    data << uint32_t(type);
+    data << uint32_t(0);        // timestamp = never written
+    data << uint32_t(0);        // uncompressed size = 0 (no data)
+    co_await SendPacket(data);
+}
+
+async<void> WorldSession::HandleUpdateAccountData(WorldPacket& packet)
+{
+    uint32_t type      = packet.Read<uint32_t>();
+    uint32_t timestamp = packet.Read<uint32_t>();
+    uint32_t size      = packet.Read<uint32_t>();
+    (void)timestamp; (void)size;
+    // Acknowledge — we don't persist account data yet
+    WorldPacket ack(SMSG_UPDATE_ACCOUNT_DATA_COMPLETE, 8);
+    ack << uint32_t(type);
+    ack << uint32_t(0);
+    co_await SendPacket(ack);
 }
 
 async<void> WorldSession::SendFeatureSystemStatus()
@@ -522,61 +611,16 @@ async<void> WorldSession::PacketLoop()
         auto packet = co_await ReadClientPacket();
 		WorldServerOpcodes opcode = static_cast<WorldServerOpcodes>(packet.opcode());
 
-        FL_LOG_DEBUG("WorldSession", "[{}] [{}]:{} (payload={} bytes)", _remoteAddress, Fireland::Utils::Describe::to_string(opcode), packet.opcodeName(), packet.Size());
+        FL_LOG_DEBUG("WorldSession", "[{}] [{}]:{} (payload={} bytes)", _remoteAddress, World::client_opcode_to_string(opcode), packet.opcodeName(), packet.Size());
 
-        switch (opcode)
+		auto handler = _handlers.find(opcode);
+		if (handler == _handlers.end())
         {
-            case CMSG_READY_FOR_ACCOUNT_DATA_TIMES:
-                co_await HandleReadyForAccountDataTimes(packet);
-                break;
-            case CMSG_CHAR_ENUM:
-                co_await HandleCharEnum(packet);
-                break;
-            case CMSG_REALM_SPLIT:
-                co_await HandleRealmSplit(packet);
-                break;
-            case CMSG_PING:
-                co_await HandlePing(packet);
-                break;
-            case CMSG_TIME_SYNC_RESP:
-                break; // acknowledged, no reply needed
-            case CMSG_LOG_DISCONNECT:
-                co_return;
-            case CMSG_CHAR_CREATE:
-                co_await HandleCharCreate(packet);
-				break;
-            case CMSG_CHAR_DELETE:
-                co_await HandleCharDelete(packet);
-                break;
-            case CMSG_PLAYER_LOGIN:
-                co_await HandlePlayerLogin(packet);
-                break;
-            case CMSG_MESSAGECHAT:
-                co_await HandleMessageChat(packet);
-                break;
-            case CMSG_SET_ACTIVE_MOVER:
-                break; // client ACK of SMSG_MOVE_SET_ACTIVE_MOVER, no reply needed
-            case MSG_MOVE_HEARTBEAT:
-            case MSG_MOVE_START_FORWARD:
-            case MSG_MOVE_START_BACKWARD:
-            case MSG_MOVE_STOP:
-            case MSG_MOVE_SET_FACING:
-                co_await HandleMovement(packet);
-                break;
-            case CMSG_LOADING_SCREEN_NOTIFY:
-				co_await HandleLoadingScreenNotify(packet);
-                break;
-            case CMSG_VIOLENCE_LEVEL:
-				co_await HandleViolenceLevel(packet);
-                break;
-            case CMSG_QUERY_QUESTS_COMPLETED:
-				co_await HandleQueryQuestsCompleted(packet);
-                break;
-            default:
-                FL_LOG_DEBUG("WorldSession", "[{}] Unhandled opcode {} ({} bytes)",
-                    _remoteAddress, packet.opcodeName(), packet.Size());
-                break;
+            FL_LOG_WARNING("WorldSession", "[{}] Unhandled opcode {}:{} ({} bytes)", _remoteAddress, World::client_opcode_to_string(packet.opcode()), packet.opcodeName(), packet.Size());
+            continue;
         }
+
+		co_await handler->second(packet);
     }
 }
 
@@ -584,7 +628,7 @@ async<void> WorldSession::PacketLoop()
 
 async<void> WorldSession::HandleReadyForAccountDataTimes(WorldPacket& /*packet*/)
 {
-    co_await SendAccountDataTimes();
+    co_await SendAccountDataTimes(0x15u); // global: config, bindings, macros
 }
 
 async<void> WorldSession::HandleCharEnum(WorldPacket& /*packet*/)
@@ -835,7 +879,7 @@ async<void> WorldSession::HandlePlayerLogin(WorldPacket& packet)
 	FL_LOG_DEBUG("WorldSession", "[{}] Player '{}' login: GUID={}, Map={}, Pos=({:.2f}, {:.2f}, {:.2f}), FirstLogin={}", _remoteAddress, ch.name, guid, ch.mapId, spawnX, spawnY, spawnZ, ch.firstLogin);
 
     // 1. Initial account data (TC: first thing in HandlePlayerLogin)
-    co_await SendAccountDataTimes();
+    co_await SendAccountDataTimes(0xEAu); // per-character: bindings, macros, layout, chat
     co_await SendLearnedDanceMoves();
     co_await SendHotfixNotify();
 
@@ -930,11 +974,10 @@ async<void> WorldSession::HandleMovement(WorldPacket& packet)
     // Rough check for MSG opcodes if needed,
     if (packet.opcode() >= 0x2000)
     {
-        
-        // but we listed them explicitly
-        // echo back
-        WorldPacket echo(packet.opcode(), packet.Size());
-        echo << packet.Storage();
+        // Echo back the exact payload bytes (only the written portion).
+        // Use Append(raw, size) to avoid copying unused buffer capacity.
+        WorldPacket echo(packet.opcode(), packet.wpos());
+        echo.Append(packet.RawData(), packet.wpos());
         co_await SendPacket(echo);
     }
 }
@@ -1204,7 +1247,7 @@ async<void> WorldSession::SendPacket(const WorldPacket& packet)
     // Encrypt the 4-byte SMSG header in-place.
     // WorldCrypt::EncryptSend is a no-op until Init() has been called.
 	WorldServerOpcodes opcode = static_cast<WorldServerOpcodes>(packet.opcode());
-    auto packet_name = Describe::to_string(opcode);
+    auto packet_name = World::server_opcode_to_string(opcode);
     FL_LOG_DEBUG("WorldSession", "[{}] {} SendPacket: {}", _remoteAddress, packet_name, Fireland::Utils::StringUtils::HexStr(frame));
     _crypt.EncryptSend(frame.data(), WorldPacket::SMSG_HEADER_SIZE);
     co_await boost::asio::async_write(_socket, boost::asio::buffer(frame), boost::asio::use_awaitable);
