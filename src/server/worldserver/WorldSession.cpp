@@ -902,12 +902,20 @@ async<void> WorldSession::HandleCharCreate(WorldPacket& packet)
 async<void> WorldSession::HandleCharDelete(WorldPacket& packet)
 {
 	uint64_t guid = packet.Read<uint64_t>();
+    WorldPacket response(SMSG_CHAR_DELETE);
+
+	auto charOpt = co_await sCharDB.GetCharacterByGuid(guid);
+	if (!charOpt || charOpt->account != _accountId)
+    {
+        FL_LOG_WARNING("WorldSession", "[{}] Character GUID {} not found for deletion on account {}", _remoteAddress, guid, _accountId);
+        response << std::to_underlying(ResponseCodes::CHAR_DELETE_FAILED);
+        co_return SendPacket(response);
+    }
+	// -- Check if character is in guild, remove from guild first or guild leader etc (not implemented yet)
+    // -- todo
 
     bool success = co_await sCharDB.DeleteCharacter(guid, _accountId);
-
-    WorldPacket response(SMSG_CHAR_DELETE);
-    // 4.3.4 SMSG_CHAR_DELETE Response
-    response << static_cast<uint8_t>(success ? ResponseCodes::CHAR_DELETE_SUCCESS : ResponseCodes::CHAR_DELETE_FAILED);
+    response << std::to_underlying(success ? ResponseCodes::CHAR_DELETE_SUCCESS : ResponseCodes::CHAR_DELETE_FAILED);
 
     co_return SendPacket(response);
 }
