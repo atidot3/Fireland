@@ -15,10 +15,10 @@
 
 #include <boost/asio/ip/tcp.hpp>
 
-#include <Utils/Describe.hpp>
+#include <Utils/Asio/Async.hpp>
+#include <Utils/Asio/Describe.hpp>
 #include <Network/Auth/AuthPacket.hpp>
 #include <Shared/SharedDefines.hpp>
-#include <Utils/Async.hpp>
 #include <Crypto/SRP6.h>
 
 enum class AuthSessionStatus

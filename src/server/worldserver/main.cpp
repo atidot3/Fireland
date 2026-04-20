@@ -13,12 +13,12 @@
 
 #include <boost/asio/signal_set.hpp>
 
-#include <Utils/Async.hpp>
+#include <Utils/Asio/Async.hpp>
+#include <Utils/Asio/IoContext.h>
 #include <Utils/Configuration/Configuration.h>
 #include <Utils/StringUtils.h>
 #include <Utils/Log.h>
 #include <Utils/ProgramOptions.h>
-#include <Utils/IoContext.h>
 
 #include <Network/TcpListener.h>
 
@@ -69,8 +69,9 @@ Fireland::Utils::Async::async<void> async_main(Fireland::Utils::IoContext& threa
     // Create the TCP listener with a session factory that constructs WorldSession instances.
     Fireland::Network::TcpListener<Fireland::World::WorldSession> listener(
         thread_pool,
-        [](boost::asio::ip::tcp::socket socket) {
-            return std::make_shared<Fireland::World::WorldSession>(std::move(socket));
+        [&thread_pool](boost::asio::ip::tcp::socket socket)
+        {
+            return std::make_shared<Fireland::World::WorldSession>(thread_pool.Get(), std::move(socket));
         }
     );
 

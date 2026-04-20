@@ -30,8 +30,11 @@ using ByteBuffer = Fireland::Utils::ByteBuffer;
 
 // ---- Construction ----------------------------------------------------------
 
-WorldSession::WorldSession(boost::asio::ip::tcp::socket socket) noexcept
-    : _socket(std::move(socket))
+WorldSession::WorldSession(boost::asio::any_io_executor exec, boost::asio::ip::tcp::socket socket) noexcept
+    : _exec(exec)
+    , _socket(std::move(socket))
+	, _recvQueue{ boost::asio::make_strand(_exec), 1024}
+	, _sendQueue{ boost::asio::make_strand(_exec), 1024 }
     , _remoteAddress{"<unknown>"}
 	, _sessionStatus{ WorldSessionStatus::AWAIT_INITIALIZE }
     , _handlers{}
@@ -39,7 +42,7 @@ WorldSession::WorldSession(boost::asio::ip::tcp::socket socket) noexcept
     , _accountId{0}
     , _serverSeed{0}
 	, _crypt{}
-    , _logoutTimer{ socket.get_executor() }
+    , _logoutTimer{ _exec }
 {
     boost::system::error_code ec;
     auto ep = _socket.remote_endpoint(ec);
@@ -49,6 +52,9 @@ WorldSession::WorldSession(boost::asio::ip::tcp::socket socket) noexcept
 
 WorldSession::~WorldSession() noexcept
 {
+    _logoutTimer.cancel();
+    _recvQueue.close();
+    _sendQueue.close();
     FL_LOG_INFO("WorldSession", "[{}] Client disconnected", _remoteAddress);
 }
 
@@ -57,7 +63,7 @@ WorldSession::~WorldSession() noexcept
 void WorldSession::Start()
 {
     auto self = shared_from_this();
-    boost::asio::co_spawn(_socket.get_executor(), self->Run(), boost::asio::detached);
+    boost::asio::co_spawn(_exec, self->Run(), boost::asio::detached);
 }
 
 async<void> WorldSession::InitializeHandlers()
@@ -98,7 +104,10 @@ async<void> WorldSession::InitializeHandlers()
 async<void> WorldSession::Run()
 {
     auto self = shared_from_this();
+	// Initialize the opcode handlers before starting the receive loop, so that we can handle incoming packets as soon as they arrive.
     co_await InitializeHandlers();
+	boost::asio::co_spawn(_exec, SendLoop(), boost::asio::detached);
+
     FL_LOG_INFO("WorldSession", "[{}] Client connected", _remoteAddress);
 
     try
@@ -186,10 +195,8 @@ async<void> WorldSession::SendAuthChallenge()
 
     packet << _serverSeed << uint8_t(1);
 
-    FL_LOG_DEBUG("WorldSession", "[{}] Sending SMSG_AUTH_CHALLENGE (seed=0x{:08X})", _remoteAddress, _serverSeed);
-
     _sessionStatus = WorldSessionStatus::AUTH_CHALLENGE;
-    co_await SendPacket(packet);
+    co_return SendPacket(packet);
 }
 
 // ---- CMSG_AUTH_SESSION ------------------------------------------------------
@@ -278,15 +285,13 @@ async<void> WorldSession::HandleAuthSession()
     auto accountOpt = co_await sAuthDB.GetAccountByUsername(_username);
     if (!accountOpt)    {
         FL_LOG_WARNING("WorldSession", "[{}] No account found for '{}'", _remoteAddress, _username);
-        co_await SendAuthResponse(ResponseCodes::AUTH_UNKNOWN_ACCOUNT);
-        co_return;
+        co_return co_await SendAuthResponse(ResponseCodes::AUTH_UNKNOWN_ACCOUNT);
     }
     auto K = co_await sAuthDB.LookupSessionKey(accountOpt->id);
     if (!K || K->size() != 40)
     {
         FL_LOG_WARNING("WorldSession", "[{}] No session key for '{}' — ensure authserver stored the key", _remoteAddress, _username);
-        co_await SendAuthResponse(ResponseCodes::AUTH_UNKNOWN_ACCOUNT);
-        co_return;
+        co_return co_await SendAuthResponse(ResponseCodes::AUTH_UNKNOWN_ACCOUNT);
     }
 
     // Verify: SHA1(account || t[4] || localChallenge[4] || serverSeed[4] || K)
@@ -305,8 +310,7 @@ async<void> WorldSession::HandleAuthSession()
     if (digest != expected)
     {
         FL_LOG_WARNING("WorldSession", "[{}] Auth digest mismatch for '{}'", _remoteAddress, _username);
-        co_await SendAuthResponse(ResponseCodes::AUTH_INCORRECT_PASSWORD);
-        co_return;
+        co_return co_await SendAuthResponse(ResponseCodes::AUTH_INCORRECT_PASSWORD);
     }
 
     FL_LOG_INFO("WorldSession", "[{}] '{}' authenticated successfully", _remoteAddress, _username);
@@ -359,7 +363,7 @@ async<void> WorldSession::SendAuthResponse(ResponseCodes result)
     FL_LOG_DEBUG("WorldSession", "[{}] Sending SMSG_AUTH_RESPONSE (result=0x{:02X})", _remoteAddress, static_cast<uint8_t>(result));
     FL_LOG_DEBUG("WorldSession", "[{}] AUTH_RESPONSE RAW: {}", _remoteAddress, Fireland::Utils::StringUtils::HexStr(response.Data()));
 
-    co_await SendPacket(response);
+    co_return SendPacket(response);
 }
 
 async<void> WorldSession::HandleLogoutRequestOpcode(WorldPacket& /*packet*/)
@@ -374,19 +378,20 @@ async<void> WorldSession::HandleLogoutRequestOpcode(WorldPacket& /*packet*/)
     WorldPacket data(SMSG_LOGOUT_RESPONSE, 1 + 4);
     data << reason;
     data << instantLogout;
-    co_await SendPacket(data);
+    co_return SendPacket(data);
     FL_LOG_DEBUG("WorldSession", "[{}] Sent SMSG_LOGOUT_RESPONSE Message (reason={}, instant={})", _remoteAddress, reason, instantLogout);
 
-	// Async callback after 20 seconds to close the connection if the client hasn't cancelled logout by then.
-    boost::asio::co_spawn(_socket.get_executor(), [self = shared_from_this()]() -> async<void>
+	// Async callback after 1 or 20 seconds to close the connection if the client hasn't cancelled logout by then.
+    boost::asio::co_spawn(_exec, [self = shared_from_this(), instantLogout]() -> async<void>
     {
-        self->_logoutTimer = boost::asio::steady_timer(self->_socket.get_executor(), std::chrono::seconds(20));
+        auto chrono_time = instantLogout ? std::chrono::seconds(1) : std::chrono::seconds(20);
+        self->_logoutTimer = boost::asio::steady_timer(self->_exec, chrono_time);
         auto [ec] = co_await self->_logoutTimer.async_wait(Utils::Async::tuple_awaitable_token);
         if (!ec)
         {
-            WorldPacket data(SMSG_LOGOUT_COMPLETE, 0);
-            co_await self->SendPacket(data);
             FL_LOG_INFO("WorldSession", "[{}] Logout timer expired, closing connection", self->_remoteAddress);
+            WorldPacket data(SMSG_LOGOUT_COMPLETE, 0);
+            self->SendPacket(data);
         }
     }, boost::asio::detached);
 }
@@ -401,9 +406,7 @@ async<void> WorldSession::HandleLogoutCancelOpcode(WorldPacket& /*packet*/)
     _logoutTimer.cancel();
 
     WorldPacket data(SMSG_LOGOUT_CANCEL_ACK, 0);
-    co_await SendPacket(data);
-
-    FL_LOG_DEBUG("WorldSession", "[{}] Sent SMSG_LOGOUT_CANCEL_ACK Message", _remoteAddress);
+    co_return SendPacket(data);
 }
 
 async<void> WorldSession::SendAddonInfo()
@@ -414,16 +417,14 @@ async<void> WorldSession::SendAddonInfo()
     // Followed by uint32 banned-addon count = 0.
     response << uint32_t(0); // bannedAddonCount
 
-    co_await SendPacket(response);
-    FL_LOG_INFO("WorldSession", "[{}] SMSG_ADDON_INFO sent", _remoteAddress);
+    co_return SendPacket(response);
 }
 
 async<void> WorldSession::SendClientCacheVersion()
 {
     WorldPacket cacheVer(SMSG_CLIENTCACHE_VERSION);
     cacheVer << uint32_t(0); // version (uint32)
-    co_await SendPacket(cacheVer);
-    FL_LOG_INFO("WorldSession", "[{}] SMSG_CLIENTCACHE_VERSION sent", _remoteAddress);
+    co_return SendPacket(cacheVer);
 }
 
 async<void> WorldSession::SendTutorialFlags()
@@ -431,8 +432,7 @@ async<void> WorldSession::SendTutorialFlags()
     WorldPacket tutorials(SMSG_TUTORIAL_FLAGS);
     for (int i = 0; i < 8; ++i)
         tutorials << uint32_t(0xFFFFFFFF);
-    co_await SendPacket(tutorials);
-    FL_LOG_INFO("WorldSession", "[{}] SMSG_TUTORIAL_FLAGS sent", _remoteAddress);
+    co_return SendPacket(tutorials);
 }
 
 async<void> WorldSession::SendAccountRestrictedUpdate()
@@ -441,8 +441,7 @@ async<void> WorldSession::SendAccountRestrictedUpdate()
     
     data.WriteBit(false); // isRestricted
     data.FlushBits();
-    co_await SendPacket(data);
-    FL_LOG_INFO("WorldSession", "[{}] SMSG_ACCOUNT_RESTRICTED_UPDATE sent", _remoteAddress);
+    co_return SendPacket(data);
 }
 
 async<void> WorldSession::SendSetDfFastLaunchResources()
@@ -451,15 +450,13 @@ async<void> WorldSession::SendSetDfFastLaunchResources()
     
     data.WriteBits(0, 32); // Count (32 bits for bits count?)
     data.FlushBits();
-    co_await SendPacket(data);
-    FL_LOG_INFO("WorldSession", "[{}] SMSG_SET_DF_FAST_LAUNCH_RESOURCES sent", _remoteAddress);
+    co_return SendPacket(data);
 }
 
 async<void> WorldSession::SendInitialRaidGroupError()
 {
     WorldPacket data(SMSG_INITIAL_RAID_GROUP_ERROR);
-    co_await SendPacket(data);
-    FL_LOG_INFO("WorldSession", "[{}] SMSG_INITIAL_RAID_GROUP_ERROR sent", _remoteAddress);
+    co_return SendPacket(data);
 }
 
 async<void> WorldSession::SendAccountDataTimes(uint32_t mask)
@@ -473,8 +470,7 @@ async<void> WorldSession::SendAccountDataTimes(uint32_t mask)
     for (uint32_t i = 0; i < 8; ++i)
         if (mask & (1u << i))
             data << uint32_t(0); // timestamp 0 = no data stored yet
-    co_await SendPacket(data);
-    FL_LOG_INFO("WorldSession", "[{}] SMSG_ACCOUNT_DATA_TIMES sent (mask=0x{:02X})", _remoteAddress, mask);
+    co_return SendPacket(data);
 }
 
 async<void> WorldSession::HandleRequestAccountData(WorldPacket& packet)
@@ -488,7 +484,7 @@ async<void> WorldSession::HandleRequestAccountData(WorldPacket& packet)
     data << uint32_t(type);
     data << uint32_t(0);        // timestamp = never written
     data << uint32_t(0);        // uncompressed size = 0 (no data)
-    co_await SendPacket(data);
+    co_return SendPacket(data);
 }
 
 async<void> WorldSession::HandleUpdateAccountData(WorldPacket& packet)
@@ -501,7 +497,7 @@ async<void> WorldSession::HandleUpdateAccountData(WorldPacket& packet)
     WorldPacket ack(SMSG_UPDATE_ACCOUNT_DATA_COMPLETE, 8);
     ack << uint32_t(type);
     ack << uint32_t(0);
-    co_await SendPacket(ack);
+    co_return SendPacket(ack);
 }
 
 async<void> WorldSession::SendFeatureSystemStatus()
@@ -521,8 +517,7 @@ async<void> WorldSession::SendFeatureSystemStatus()
     features.WriteBit(false); // SessionAlert present
     features.WriteBit(false); // VoiceEnabled
     features.FlushBits();
-    co_await SendPacket(features);
-    FL_LOG_INFO("WorldSession", "[{}] SMSG_FEATURE_SYSTEM_STATUS sent", _remoteAddress);
+    co_return SendPacket(features);
 }
 
 async<void> WorldSession::SendHotfixNotify()
@@ -530,16 +525,14 @@ async<void> WorldSession::SendHotfixNotify()
     WorldPacket data(SMSG_HOTFIX_NOTIFY_BLOB);
     data.WriteBits(0, 22); // hotfix count = 0
     data.FlushBits();
-    co_await SendPacket(data);
-    FL_LOG_INFO("WorldSession", "[{}] SMSG_HOTFIX_NOTIFY_BLOB sent (0 hotfixes)", _remoteAddress);
+    co_return SendPacket(data);
 }
 
 async<void> WorldSession::SendBindPointUpdate(float x, float y, float z, uint32_t mapId, uint32_t zoneId)
 {
     WorldPacket data(SMSG_BIND_POINT_UPDATE);
     data << x << y << z << mapId << zoneId;
-    co_await SendPacket(data);
-    FL_LOG_INFO("WorldSession", "[{}] SMSG_BIND_POINT_UPDATE sent", _remoteAddress);
+    co_return SendPacket(data);
 }
 
 async<void> WorldSession::SendWorldServerInfo()
@@ -553,8 +546,7 @@ async<void> WorldSession::SendWorldServerInfo()
     data << uint8_t(0);  // IsTournamentRealm
     data << uint32_t(static_cast<uint32_t>(std::time(nullptr))); // WeeklyReset
     data << uint32_t(0); // DifficultyID (0 = normal)
-    co_await SendPacket(data);
-    FL_LOG_INFO("WorldSession", "[{}] SMSG_WORLD_SERVER_INFO sent", _remoteAddress);
+    co_return SendPacket(data);
 }
 
 async<void> WorldSession::SendRealmSplit(uint32_t realmId)
@@ -569,8 +561,7 @@ async<void> WorldSession::SendRealmSplit(uint32_t realmId)
     split.FlushBits();
     split.Append(splitDate.data(), splitDate.size());
 
-    co_await SendPacket(split);
-    FL_LOG_INFO("WorldSession", "[{}] SMSG_REALM_SPLIT sent (Bit-packed 4.3.4)", _remoteAddress);
+    co_return SendPacket(split);
 }
 
 async<void> WorldSession::SendSetTimeZoneInformation()
@@ -586,16 +577,14 @@ async<void> WorldSession::SendSetTimeZoneInformation()
     data.Append(serverTz.data(), serverTz.size());
     data.Append(localTz.data(), localTz.size());
 
-    co_await SendPacket(data);
-    FL_LOG_INFO("WorldSession", "[{}] SMSG_SET_TIME_ZONE_INFORMATION sent (Bit-packed 4.3.4)", _remoteAddress);
+    co_return SendPacket(data);
 }
 
 async<void> WorldSession::SendLearnedDanceMoves()
 {
     WorldPacket data(SMSG_LEARNED_DANCE_MOVES, 8);
     data << uint64_t(0);
-    co_await SendPacket(data);
-    FL_LOG_INFO("WorldSession", "[{}] SMSG_LEARNED_DANCE_MOVES sent (0 moves)", _remoteAddress);
+    co_return SendPacket(data);
 }
 
 async<void> WorldSession::SendMotd()
@@ -607,8 +596,7 @@ async<void> WorldSession::SendMotd()
     for (auto const& line : lines)
         motd << line; // WriteCString (null-terminated)
 
-    co_await SendPacket(motd);
-    FL_LOG_INFO("WorldSession", "[{}] SMSG_MOTD sent", _remoteAddress);
+    co_return SendPacket(motd);
 }
 
 // ---- Packet loop (post-auth) ------------------------------------------------
@@ -617,21 +605,67 @@ async<void> WorldSession::PacketLoop()
 {
     FL_LOG_INFO("WorldSession", "[{}] '{}' entering packet loop", _remoteAddress, _username);
 
+    boost::asio::co_spawn(_exec, RecvLoop(), boost::asio::detached);
     while (_socket.is_open())
     {
         auto packet = co_await ReadClientPacket();
-		WorldServerOpcodes opcode = static_cast<WorldServerOpcodes>(packet.opcode());
+        _recvQueue.push(std::move(packet));
+    }
+}
 
-        FL_LOG_DEBUG("WorldSession", "[{}] [{}]:{} (payload={} bytes)", _remoteAddress, World::client_opcode_to_string(opcode), packet.opcodeName(), packet.Size());
+async<void> WorldSession::RecvLoop()
+{
+	auto self = shared_from_this();
+    while (_socket.is_open())
+    {
+        std::optional<WorldPacket> packetOpt = co_await _recvQueue.async_pop();
+        if (!packetOpt)
+			co_return; // Queue closed, likely due to socket shutdown
 
-		auto handler = _handlers.find(opcode);
-		if (handler == _handlers.end())
+		auto packet = std::move(*packetOpt);
+        WorldServerOpcodes opcode = static_cast<WorldServerOpcodes>(packet.opcode());
+
+        auto handler = _handlers.find(opcode);
+        if (handler == _handlers.end())
         {
             FL_LOG_WARNING("WorldSession", "[{}] Unhandled opcode {}:{} ({} bytes)", _remoteAddress, World::client_opcode_to_string(packet.opcode()), packet.opcodeName(), packet.Size());
             continue;
         }
 
-		co_await handler->second(packet);
+        FL_LOG_DEBUG("WorldSession", "[{}] [{}]:{} (payload={} bytes)", _remoteAddress, World::client_opcode_to_string(opcode), packet.opcodeName(), packet.Size());
+        co_await handler->second(packet);
+	}
+}
+
+async<void> WorldSession::SendLoop()
+{
+    auto self = shared_from_this();
+    while (_socket.is_open())
+    {
+        std::optional<WorldPacket> packetOpt = co_await _sendQueue.async_pop();
+        if (!packetOpt)
+            co_return; // Queue closed, likely due to socket shutdown
+        auto packet = std::move(*packetOpt);
+        auto frame = packet.Serialize();
+    
+        if (packet.opcode() == NULL_OPCODE)
+        {
+            FL_LOG_ERROR("Network", "Prevented sending of NULL_OPCODE");
+            co_return;
+        }
+        else if (packet.opcode() == UNKNOWN_OPCODE)
+        {
+            FL_LOG_ERROR("Network", "Prevented sending of UNKNOWN_OPCODE");
+            co_return;
+        }
+
+        // Encrypt the 4-byte SMSG header in-place.
+        // WorldCrypt::EncryptSend is a no-op until Init() has been called.
+	    WorldServerOpcodes opcode = static_cast<WorldServerOpcodes>(packet.opcode());
+        auto packet_name = World::server_opcode_to_string(opcode);
+        FL_LOG_DEBUG("WorldSession", "[{}] {} co_return SendPacket: {}", _remoteAddress, packet_name, Fireland::Utils::StringUtils::HexStr(frame));
+        _crypt.EncryptSend(frame.data(), WorldPacket::SMSG_HEADER_SIZE);
+        co_await boost::asio::async_write(_socket, boost::asio::buffer(frame), boost::asio::use_awaitable);
     }
 }
 
@@ -666,7 +700,7 @@ async<void> WorldSession::HandlePing(WorldPacket& packet)
 
     WorldPacket pong(SMSG_PONG);
     pong << serial;
-    co_await SendPacket(pong);
+    co_return SendPacket(pong);
 }
 
 async<void> WorldSession::SendCharEnum()
@@ -675,8 +709,6 @@ async<void> WorldSession::SendCharEnum()
     
     const auto characters = co_await sCharDB.GetCharactersForAccount(_accountId);
 	const auto charCount = static_cast<uint32_t>(characters.size());
-
-	FL_LOG_DEBUG("WorldSession", "[{}] Sending SMSG_CHAR_ENUM with {} characters", _remoteAddress, charCount);
 
     struct GuidData {
         uint8_t g[8];
@@ -785,8 +817,7 @@ async<void> WorldSession::SendCharEnum()
         ++i;
     }
 
-    co_await SendPacket(data);
-    FL_LOG_INFO("WorldSession", "[{}] SMSG_CHAR_ENUM sent (empty list)", _remoteAddress);
+    co_return SendPacket(data);
 }
 
 async<void> WorldSession::HandleCharCreate(WorldPacket& packet)
@@ -797,20 +828,18 @@ async<void> WorldSession::HandleCharCreate(WorldPacket& packet)
         uint8_t race, _class, gender, skin, face, hairStyle, hairColor, facialHair, outfitId;
         packet >> race >> _class >> gender >> skin >> face >> hairStyle >> hairColor >> facialHair >> outfitId;
 
-        FL_LOG_INFO("WorldSession", "[{}] CMSG_CHAR_CREATE for '{}' (Race: {}, Class: {})", _remoteAddress, name, race, _class);
-
-        auto SendCharCreateResponse = [this](ResponseCodes code) -> async<void>
+        auto SendCharCreateResponse = [this](ResponseCodes code)
         {
             WorldPacket response(SMSG_CHAR_CREATE);
             response << code;
-            co_await SendPacket(response);
+            SendPacket(response);
         };
 
         auto name_free = co_await sCharDB.IsNameAvailable(name);
         if (!name_free)
         {
             FL_LOG_WARNING("WorldSession", "[{}] Character name '{}' is already taken", _remoteAddress, name);
-            co_return co_await SendCharCreateResponse(ResponseCodes::CHAR_CREATE_NAME_IN_USE);
+            co_return SendCharCreateResponse(ResponseCodes::CHAR_CREATE_NAME_IN_USE);
 		}
 
 		characters character{0, _accountId, name, race, _class, gender, skin, face, hairStyle, hairColor, facialHair, 1, 12, 0, -8949.95f, -132.493f, 83.5312f, 0, 0, 0, true};
@@ -818,11 +847,11 @@ async<void> WorldSession::HandleCharCreate(WorldPacket& packet)
         if (!opt_created_character)
         {
             FL_LOG_ERROR("WorldSession", "[{}] Failed to create character '{}' in database", _remoteAddress, name);
-            co_return co_await SendCharCreateResponse(ResponseCodes::CHAR_CREATE_FAILED);
+            co_return SendCharCreateResponse(ResponseCodes::CHAR_CREATE_FAILED);
 		}
 
         //bool success = _charService->CreateCharacter(_accountId, name, race, klass, gender, skin, face, hairStyle, hairColor, facialHair);
-		co_return co_await SendCharCreateResponse(ResponseCodes::CHAR_CREATE_SUCCESS);
+		co_return SendCharCreateResponse(ResponseCodes::CHAR_CREATE_SUCCESS);
     }
     catch (const std::exception& e)
     {
@@ -834,16 +863,13 @@ async<void> WorldSession::HandleCharDelete(WorldPacket& packet)
 {
 	uint64_t guid = packet.Read<uint64_t>();
 
-    FL_LOG_DEBUG("WorldSession", "[{}] CMSG_CHAR_DELETE for GUID: {}", _remoteAddress, guid);
-
     bool success = co_await sCharDB.DeleteCharacter(guid, _accountId);
 
     WorldPacket response(SMSG_CHAR_DELETE);
     // 4.3.4 SMSG_CHAR_DELETE Response
     response << static_cast<uint8_t>(success ? ResponseCodes::CHAR_DELETE_SUCCESS : ResponseCodes::CHAR_DELETE_FAILED);
 
-    co_await SendPacket(response);
-    FL_LOG_INFO("WorldSession", "[{}] SMSG_CHAR_DELETE sent result: {}", _remoteAddress, success ? "SUCCESS" : "FAIL");
+    co_return SendPacket(response);
 }
 
 async<void> WorldSession::HandlePlayerLogin(WorldPacket& packet)
@@ -871,8 +897,6 @@ async<void> WorldSession::HandlePlayerLogin(WorldPacket& packet)
     if (hasByte[7]) guidBytes[7] = packet.Read<uint8_t>() ^ 1;
 
     uint32_t charGuid = static_cast<uint32_t>(rawGuid);
-    FL_LOG_INFO("WorldSession", "[{}] CMSG_PLAYER_LOGIN for GUID: {}", _remoteAddress, charGuid);
-
     auto charOpt = co_await sCharDB.GetCharacterByGuid(charGuid);
     if (!charOpt)
     {
@@ -916,13 +940,13 @@ async<void> WorldSession::HandlePlayerLogin(WorldPacket& packet)
     // 5. LOGIN_VERIFY_WORLD must come AFTER CREATE_OBJECT2 + MoveSetActiveMover
     WorldPacket verify(SMSG_LOGIN_VERIFY_WORLD, 20);
     verify << uint32_t(ch.mapId) << spawnX << spawnY << spawnZ << float(0.0f);
-    co_await SendPacket(verify);
+    co_return SendPacket(verify);
 
     co_await SendLoginSetTimeSpeed();
 
     WorldPacket timeSync(SMSG_TIME_SYNC_REQ);
     timeSync << uint32_t(0);
-    co_await SendPacket(timeSync);
+    co_return SendPacket(timeSync);
 
     co_await SendTutorialFlags();
 
@@ -958,7 +982,7 @@ async<void> WorldSession::HandleMessageChat(WorldPacket& packet)
     response << message;
     response << static_cast<uint8_t>(0); // Tag
 
-    co_await SendPacket(response);
+    co_return SendPacket(response);
 }
 
 async<void> WorldSession::HandleMovement(WorldPacket& packet)
@@ -975,8 +999,8 @@ async<void> WorldSession::HandleMovement(WorldPacket& packet)
     ReadMovementInfo(packet, move);
 
     // Update internal state
-	auto _playerGuid = 1; // Placeholder GUID for the player moving
-    FL_LOG_DEBUG("WorldSession", "[{}] Player {} moved to ({:.2f}, {:.2f}, {:.2f}) O:{:.2f}", _remoteAddress, _playerGuid, move.x, move.y, move.z, move.orientation);
+	//auto _playerGuid = 1; // Placeholder GUID for the player moving
+    //FL_LOG_DEBUG("WorldSession", "[{}] Player {} moved to ({:.2f}, {:.2f}, {:.2f}) O:{:.2f}", _remoteAddress, _playerGuid, move.x, move.y, move.z, move.orientation);
 
     // Broadcast movement (Echo back to client for now, or broadcast to others if
     // any) In WoW, we typically echo back the movement packet if it's an MSG
@@ -989,7 +1013,7 @@ async<void> WorldSession::HandleMovement(WorldPacket& packet)
         // Use Append(raw, size) to avoid copying unused buffer capacity.
         WorldPacket echo(packet.opcode(), packet.wpos());
         echo.Append(packet.RawData(), packet.wpos());
-        co_await SendPacket(echo);
+        co_return SendPacket(echo);
     }
 }
 
@@ -1001,14 +1025,14 @@ async<void> WorldSession::SendInitialSpells()
     data << uint8_t(0);   // initial login flag
     data << uint16_t(0);  // spell count
     data << uint16_t(0);  // cooldown count
-    co_await SendPacket(data);
+    co_return SendPacket(data);
 }
 
 async<void> WorldSession::SendUnlearnSpells()
 {
     WorldPacket data(SMSG_SEND_UNLEARN_SPELLS, 4);
     data << uint32_t(0);  // count = 0
-    co_await SendPacket(data);
+    co_return SendPacket(data);
 }
 
 async<void> WorldSession::SendInitializeFactions()
@@ -1021,7 +1045,7 @@ async<void> WorldSession::SendInitializeFactions()
         data << uint8_t(0);  // flags
         data << uint32_t(0); // standing
     }
-    co_await SendPacket(data);
+    co_return SendPacket(data);
 }
 
 async<void> WorldSession::SendActionButtons()
@@ -1031,7 +1055,7 @@ async<void> WorldSession::SendActionButtons()
     data << uint8_t(0);  // 0 = initial login
     for (int i = 0; i < 144; ++i)
         data << uint32_t(0);
-    co_await SendPacket(data);
+    co_return SendPacket(data);
 }
 
 async<void> WorldSession::SendLoginSetTimeSpeed()
@@ -1055,7 +1079,7 @@ async<void> WorldSession::SendLoginSetTimeSpeed()
     data << packedTime;
     data << float(0.01666667f);
     data << uint32_t(0); // GameTimeHolidayOffset
-    co_await SendPacket(data);
+    co_return SendPacket(data);
 }
 
 // Display ID lookup for playable races in Cata 4.3.4 (gender: 0=male, 1=female)
@@ -1139,7 +1163,7 @@ async<void> WorldSession::SendCreatePlayerObject(const characters& ch, float x, 
 
     WorldPacket packet(SMSG_UPDATE_OBJECT);
     data.Build(packet);
-    co_await SendPacket(packet);
+    co_return SendPacket(packet);
 }
 
 async<void> WorldSession::SendClientControlUpdate(uint64_t guid, bool allowMove)
@@ -1148,7 +1172,7 @@ async<void> WorldSession::SendClientControlUpdate(uint64_t guid, bool allowMove)
     WorldPacket data(SMSG_CLIENT_CONTROL_UPDATE);
     data.WritePackedGuid(guid);
     data << uint8_t(allowMove ? 1 : 0);
-    co_await SendPacket(data);
+    co_return SendPacket(data);
 }
 
 async<void> WorldSession::SendMoveSetActiveMover(uint64_t guid)
@@ -1176,7 +1200,7 @@ async<void> WorldSession::SendMoveSetActiveMover(uint64_t guid)
     data.WriteByteSeq(g[7]);
     data.WriteByteSeq(g[1]);
     data.WriteByteSeq(g[4]);
-    co_await SendPacket(data);
+    co_return SendPacket(data);
 }
 
 async<void> WorldSession::HandleLoadingScreenNotify(WorldPacket& packet)
@@ -1202,7 +1226,7 @@ async<void> WorldSession::HandleQueryQuestsCompleted(WorldPacket& /*recvData*/)
     WorldPacket data(SMSG_QUERY_QUESTS_COMPLETED_RESPONSE, 4 + 4 * rew_count);
     data << uint32_t(rew_count);
 
-    co_await SendPacket(data);
+    co_return SendPacket(data);
 }
 
 
@@ -1240,26 +1264,8 @@ async<WorldPacket> WorldSession::ReadClientPacket()
     co_return packet;
 }
 
-async<void> WorldSession::SendPacket(const WorldPacket& packet)
+void WorldSession::SendPacket(const WorldPacket& packet)
 {
-    auto frame = packet.Serialize();
-    
-    if (packet.opcode() == NULL_OPCODE)
-    {
-        FL_LOG_ERROR("Network", "Prevented sending of NULL_OPCODE");
-        co_return;
-    }
-    else if (packet.opcode() == UNKNOWN_OPCODE)
-    {
-        FL_LOG_ERROR("Network", "Prevented sending of UNKNOWN_OPCODE");
-        co_return;
-    }
-
-    // Encrypt the 4-byte SMSG header in-place.
-    // WorldCrypt::EncryptSend is a no-op until Init() has been called.
-	WorldServerOpcodes opcode = static_cast<WorldServerOpcodes>(packet.opcode());
-    auto packet_name = World::server_opcode_to_string(opcode);
-    FL_LOG_DEBUG("WorldSession", "[{}] {} SendPacket: {}", _remoteAddress, packet_name, Fireland::Utils::StringUtils::HexStr(frame));
-    _crypt.EncryptSend(frame.data(), WorldPacket::SMSG_HEADER_SIZE);
-    co_await boost::asio::async_write(_socket, boost::asio::buffer(frame), boost::asio::use_awaitable);
+	auto copy = packet; // Make a copy to ensure the original packet can be safely reused by the caller
+    _sendQueue.push(std::move(copy));
 }

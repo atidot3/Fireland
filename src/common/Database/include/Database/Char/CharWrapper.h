@@ -6,7 +6,7 @@
 
 #include <Database/connection_pool_wrapper.h>
 
-#include <Utils/Async.hpp>
+#include <Utils/Asio/Async.hpp>
 
 #include <Shared/Auth/Account.h>
 #include <Shared/Char/Characters.h>

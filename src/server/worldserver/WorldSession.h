@@ -20,7 +20,8 @@
 #include <Crypto/SHA1.h>
 #include <Crypto/WorldCrypt.h>
 
-#include <Utils/Async.hpp>
+#include <Utils/Asio/Async.hpp>
+#include <Utils/Asio/AsyncQueue.hpp>
 #include <Utils/ByteBuffer.h>
 
 #include <Shared/SharedDefines.hpp>
@@ -44,7 +45,7 @@ namespace Fireland::World
     class WorldSession : public std::enable_shared_from_this<WorldSession>
     {
     public:
-        explicit WorldSession(boost::asio::ip::tcp::socket socket) noexcept;
+        explicit WorldSession(boost::asio::any_io_executor exec, boost::asio::ip::tcp::socket socket) noexcept;
         ~WorldSession() noexcept;
 
         void Start();
@@ -76,6 +77,8 @@ namespace Fireland::World
 
         // ---- Packet loop (post-auth) ----
         Utils::Async::async<void> PacketLoop();
+        Utils::Async::async<void> RecvLoop();
+        Utils::Async::async<void> SendLoop();
 
         // ---- Post-auth packet handlers ----
         Utils::Async::async<void> HandleReadyForAccountDataTimes(WorldPacket& packet);
@@ -116,21 +119,24 @@ namespace Fireland::World
         /// Decrypts the header in-place; payload is appended to the returned packet.
         Utils::Async::async<WorldPacket> ReadClientPacket();
 
-        /// Serialise, encrypt the SMSG header, and write the packet to the socket.
-        Utils::Async::async<void> SendPacket(const WorldPacket& packet);
+		/// Serialise, encrypt the SMSG header, and push the complete frame into the send queue.
+        void SendPacket(const WorldPacket& packet);
 
     private:
-        boost::asio::ip::tcp::socket                        _socket;
-        std::string                                         _remoteAddress;
-		WorldSessionStatus                                  _sessionStatus;
-        std::unordered_map<uint32_t, WorldPacketHandler>    _handlers;
+        boost::asio::any_io_executor                       _exec;
+        boost::asio::ip::tcp::socket                       _socket;
+        Utils::Async::AsyncQueue<WorldPacket>              _recvQueue;
+        Utils::Async::AsyncQueue<WorldPacket>              _sendQueue;
+        std::string                                        _remoteAddress;
+		WorldSessionStatus                                 _sessionStatus;
+        std::unordered_map<uint32_t, WorldPacketHandler>   _handlers;
 
-        std::string                                         _username;
-        uint32_t                                            _accountId;
-        uint32_t                                            _serverSeed;
-        Crypto::WorldCrypt                                  _crypt;
+        std::string                                        _username;
+        uint32_t                                           _accountId;
+        uint32_t                                           _serverSeed;
+        Crypto::WorldCrypt                                 _crypt;
 
 		// -- Logout timer: cancellable with HandleLogoutCancelOpcode; if it expires, the session is closed and the player is logged out of the world.
-		boost::asio::steady_timer						    _logoutTimer;
+		boost::asio::steady_timer						   _logoutTimer;
     };
 } // namespace Fireland::World

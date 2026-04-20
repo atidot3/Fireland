@@ -11,9 +11,13 @@
 #include <boost/asio/use_future.hpp>
 #include <boost/asio/detached.hpp>
 #include <boost/asio/system_timer.hpp>
+#include <boost/asio/strand.hpp>
 
 namespace Fireland::Utils::Async
 {
+	using Executor = boost::asio::any_io_executor;
+	using Strand = boost::asio::strand<Executor>;
+
 	template<typename T>
 	using async = boost::asio::awaitable<T>;
 

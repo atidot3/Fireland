@@ -7,12 +7,14 @@
 
 
 set(headers_files
-    include/Utils/Async.hpp
+    include/Utils/Asio/Async.hpp
+    include/Utils/Asio/AsyncQueue.hpp
+    include/Utils/Asio/Describe.hpp
+    include/Utils/Asio/IoContext.h
+
     include/Utils/ByteBuffer.h
-    include/Utils/Describe.hpp
     include/Utils/Filesystem.h
     include/Utils/NetUtils.h
-    include/Utils/IoContext.h
     include/Utils/Log.h
     include/Utils/ProgramOptions.h
     include/Utils/StringUtils.h
