@@ -90,7 +90,7 @@ async<bool> CharWrapper::IsNameAvailable(std::string_view name) noexcept
     co_return result.value().rows().empty();
 }
 
-async<std::optional<characters>> CharWrapper::GetCharacterByGuid(uint32_t guid) noexcept
+async<std::optional<characters>> CharWrapper::GetCharacterByGuid(uint64_t guid) noexcept
 {
     auto result = co_await _connection_pool.async_execute<std::vector<characters>>(
         "SELECT * FROM characters WHERE guid = ?", guid);

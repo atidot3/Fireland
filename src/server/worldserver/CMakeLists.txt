@@ -3,11 +3,9 @@
 # ============================================================================
 
 set(headers_files
-    WorldSession.h
 )
 
 set(sources_files
-  WorldSession.cpp
   main.cpp
 )
 

@@ -25,7 +25,7 @@
 #include <Database/Auth/AuthWrapper.h>
 #include <Database/Char/CharWrapper.h>
 
-#include "WorldSession.h"
+#include <Game/World/WorldSession.h>
 
 Fireland::Utils::Async::async<bool> initiate_database(Fireland::Utils::IoContext& thread_pool)
 {

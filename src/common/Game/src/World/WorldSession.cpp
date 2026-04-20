@@ -1,4 +1,4 @@
-#include "WorldSession.h"
+#include <Game/World/WorldSession.h>
 
 #include <cctype>
 #include <chrono>
@@ -398,6 +398,7 @@ async<void> WorldSession::HandleLogoutRequestOpcode(WorldPacket& /*packet*/)
             self->_characterId = 0;
         }
     }, boost::asio::detached);
+    co_return;
 }
 
 async<void> WorldSession::HandlePlayerLogoutOpcode(WorldPacket& /*packet*/)
@@ -751,8 +752,8 @@ async<void> WorldSession::SendCharEnum()
 	const auto charCount = static_cast<uint32_t>(characters.size());
 
     struct GuidData {
-        uint8_t g[8];
-        uint8_t gg[8];
+        uint8_t g[8] = {};
+        uint8_t gg[8] = {};
     };
     std::vector<GuidData> guidData(charCount);
     for (uint32_t i = 0; const auto& it : characters)
@@ -1225,7 +1226,7 @@ async<void> WorldSession::SendClientControlUpdate(uint64_t guid, bool allowMove)
 async<void> WorldSession::SendMoveSetActiveMover(uint64_t guid)
 {
     // TC: MoveSetActiveMover::Write() — bit-packed GUID in order 5,7,3,6,0,4,1,2
-    uint8_t g[8];
+    uint8_t g[8] = {};
     for (int i = 0; i < 8; ++i)
         g[i] = static_cast<uint8_t>((guid >> (i * 8)) & 0xFF);
 

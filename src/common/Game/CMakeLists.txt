@@ -7,10 +7,14 @@
 
 set(headers_files
     include/Game/Objects/UpdateData.h
+
+    include/Game/World/WorldSession.h
 )
 
 set(sources_files
     src/Objects/UpdateData.cpp
+
+    src/World/WorldSession.cpp
 )
 
 add_library(fireland_game STATIC
@@ -31,6 +35,7 @@ target_link_libraries(fireland_game
     fireland_shared
     fireland_network
     fireland_database
+    fireland_crypto
 )
 
 # includes for internal use

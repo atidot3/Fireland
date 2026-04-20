@@ -22,7 +22,7 @@
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/steady_timer.hpp>
 
-#include <Utils/Async.hpp>
+#include <Utils/Asio/Async.hpp>
 
 #include <Network/PacketBuffer.h>
 
