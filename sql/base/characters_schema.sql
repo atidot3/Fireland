@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS `characters` (
   `guildId` int(10) unsigned NOT NULL DEFAULT '0',
   `characterFlags` int(10) unsigned NOT NULL DEFAULT '0',
   `customizationFlags` int(10) unsigned NOT NULL DEFAULT '0',
-  `firstLogin` tinyint(1) NULL DEFAULT '1',
+  `firstLogin` BOOLEAN NOT NULL DEFAULT '1',
   PRIMARY KEY (`guid`),
   KEY `idx_account` (`account`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

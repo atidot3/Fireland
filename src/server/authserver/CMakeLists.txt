@@ -3,11 +3,13 @@
 # ============================================================================
 
 set(headers_files
+    Network/AuthState.h
     Network/AuthSession.h
     Realm/Realm.h
 )
 
 set(sources_files
+    Network/AuthState.cpp
     Network/AuthSession.cpp
     Realm/Realm.cpp
     main.cpp

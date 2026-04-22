@@ -15,27 +15,13 @@
 
 #include <boost/asio/ip/tcp.hpp>
 
+#include "AuthState.h"
+
 #include <Utils/Asio/Async.hpp>
 #include <Utils/Asio/Describe.hpp>
 #include <Network/Auth/AuthPacket.hpp>
 #include <Shared/SharedDefines.hpp>
 #include <Crypto/SRP6.h>
-
-enum class AuthSessionStatus
-{
-    LOGON_CHALLENGE,
-    LOGON_PROOF,
-    RECONNECT_PROOF,
-	WAIT_FOR_REALM_LIST,
-    CLOSED
-};
-BOOST_DESCRIBE_ENUM(AuthSessionStatus, LOGON_CHALLENGE, LOGON_PROOF, RECONNECT_PROOF, WAIT_FOR_REALM_LIST, CLOSED)
-
-struct AuthHandler
-{
-    AuthSessionStatus status;
-    std::function<Firelands::Utils::Async::async<void>(Firelands::Auth::AuthPacket)> handler;
-};
 
 namespace Firelands::Auth
 {
@@ -46,7 +32,7 @@ namespace Firelands::Auth
         ~AuthSession() noexcept;
 
         void Start();
-        void Close() {}
+        void Close();
         uint64_t GetId() const { return reinterpret_cast<uint64_t>(this); }
 
     private:
@@ -60,15 +46,14 @@ namespace Firelands::Auth
 
     private:
         boost::asio::ip::tcp::socket                _socket;
-        AuthSessionStatus                           _status;
+        AuthState                                   _authState;
         std::string                                 _remoteAddress;
         std::unordered_map<AuthOpcode, AuthHandler> _handlers;
 
         Crypto::SRP6 _srp;
         std::string  _username;
         uint32_t     _accountId;
-        bool         _authenticated = false;
 
-        std::array<uint8_t, 16> _reconnectRand{};  // random challenge for reconnect proof
+        std::array<uint8_t, 16> _reconnectRand;  // random challenge for reconnect proof
     };
 } // namespace Firelands::Auth
